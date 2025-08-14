@@ -50,7 +50,8 @@ POLICY_CONFIG = {
     'nheads': 8,
     'camera_names': ['front'],
     'policy_class': 'ACT',
-    'temporal_agg': False
+    'temporal_agg': False,
+    'position_encoding': "sine"
 }
 
 # training config
