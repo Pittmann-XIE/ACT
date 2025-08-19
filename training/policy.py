@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 import sys
 sys.path.append('/home/ipk311l-user/ws_ros2humble-main_lab/ACT/act_origin')
 
-from detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
+from act_origin.detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
 import IPython
 e = IPython.embed
 
