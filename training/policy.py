@@ -19,27 +19,50 @@ class ACTPolicy(nn.Module):
         print(f'KL Weight {self.kl_weight}')
 
     def __call__(self, qpos, image, actions=None, is_pad=None):
-        env_state = None
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-        image = normalize(image)
-        if actions is not None: # training time
-            actions = actions[:, :self.model.num_queries]
-            is_pad = is_pad[:, :self.model.num_queries]
+            env_state = None
+            normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                            std=[0.229, 0.224, 0.225])
+            image = normalize(image)
+            if actions is not None: # training time
+                actions = actions[:, :self.model.num_queries]
+                is_pad = is_pad[:, :self.model.num_queries]
 
-            a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state, actions, is_pad)
-            total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
-            loss_dict = dict()
-            all_l1 = F.l1_loss(actions, a_hat, reduction='none')
-            l1 = (all_l1 * ~is_pad.unsqueeze(-1)).mean()
-            loss_dict['l1'] = l1
-            loss_dict['kl'] = total_kld[0]
-            loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
-            return loss_dict
-        else: # inference time
-            a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
-            return a_hat
-
+                a_hat, is_pad_hat, (mu, logvar) = self.model(qpos, image, env_state, actions, is_pad)
+                
+                # Split predictions into action and distance components
+                a_hat_action = a_hat[:, :, :self.action_dim]        # (batch, seq, action_dim)
+                a_hat_distance = a_hat[:, :, self.action_dim:]       # (batch, seq, 1)
+                
+                # Split targets into action and distance components
+                actions_action = actions[:, :, :self.action_dim]     # (batch, seq, action_dim)
+                actions_distance = actions[:, :, self.action_dim:]   # (batch, seq, 1)
+                
+                total_kld, dim_wise_kld, mean_kld = kl_divergence(mu, logvar)
+                loss_dict = dict()
+                
+                # L1 loss for action part
+                all_l1_action = F.l1_loss(actions_action, a_hat_action, reduction='none')
+                l1_action = (all_l1_action * ~is_pad.unsqueeze(-1)).mean()
+                loss_dict['l1_action'] = l1_action
+                
+                # Binary Cross Entropy loss for distance part
+                # BCEWithLogitsLoss applies sigmoid internally (expects raw logits)
+                bce_loss = F.binary_cross_entropy_with_logits(
+                    a_hat_distance.squeeze(-1),           # (batch, seq)
+                    actions_distance.squeeze(-1),         # (batch, seq)
+                    reduction='none'
+                )
+                l1_distance = (bce_loss * ~is_pad).mean()
+                loss_dict['bce_distance'] = l1_distance
+                
+                # Total loss
+                loss_dict['kl'] = total_kld[0]
+                loss_dict['loss'] = loss_dict['l1_action'] + loss_dict['bce_distance'] + loss_dict['kl'] * self.kl_weight
+                return loss_dict
+            else: # inference time
+                a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
+                return a_hat
+            
     def configure_optimizers(self):
         return self.optimizer
 
