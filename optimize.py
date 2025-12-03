@@ -30,7 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, default='pick', help='Task name')
 parser.add_argument('--n_trials', type=int, default=100, help='Number of trials')
 parser.add_argument('--n_epochs_per_trial', type=int, default=50, help='Epochs per trial')
-parser.add_argument('--device', type=str, default='cuda:1' if torch.cuda.is_available() else 'cpu')
+parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')
 parser.add_argument('--db_path', type=str, default='./optuna_study.db', help='Path to save Optuna database')
 args = parser.parse_args()
 
