@@ -35,13 +35,13 @@ TASK_CONFIG = {
 
 # policy config
 POLICY_CONFIG = {
-    'lr': 1e-5,
+    'lr': 5e-6,
     'device': device,
     'num_queries': 100,
-    'kl_weight': 10,
-    'trans_weight': 1.0,
-    'rot_weight': 1.0,
-    'dist_weight': 1.0,
+    'kl_weight': 0.275,
+    'trans_weight': 0.176,
+    'rot_weight': 0.069,
+    'dist_weight': 0.092,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,

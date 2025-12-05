@@ -155,7 +155,7 @@ if __name__ == '__main__':
         wandb.init(
             project="ACT_origin",
             entity=None,  # Change to your wandb team name if needed
-            name=f"{task}_20251201_01",
+            name=f"{task}_20251203_01",
             config={
                 "task": task,
                 # Task config
@@ -164,7 +164,7 @@ if __name__ == '__main__':
                 **{f"train_cfg/{k}": v for k, v in TRAIN_CONFIG.items()},
                 # Policy config
                 **{f"policy_cfg/{k}": v for k, v in POLICY_CONFIG.items()},
-                'remarks': 'testing'
+                'remarks': 'best trial 18'
             }
         )
     
