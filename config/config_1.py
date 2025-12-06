@@ -10,8 +10,7 @@ DATA_DIR = '/mnt/Ego2Exo/pick/pick/h5/pick_corrected'
 CHECKPOINT_DIR = 'checkpoints/'
 
 # device
-device = 'cpu'
-if torch.cuda.is_available(): device = 'cuda'
+device = 'cuda:0'
 #if torch.backends.mps.is_available(): device = 'mps'
 os.environ['DEVICE'] = device
 
@@ -35,13 +34,13 @@ TASK_CONFIG = {
 
 # policy config
 POLICY_CONFIG = {
-    'lr': 5e-6,
+    'lr': 0.000048,
     'device': device,
     'num_queries': 100,
-    'kl_weight': 0.275,
-    'trans_weight': 0.176,
-    'rot_weight': 0.069,
-    'dist_weight': 0.092,
+    'kl_weight': 0.162375,
+    'trans_weight': 0.011903,
+    'rot_weight': 0.023487,
+    'dist_weight': 0.017323,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
@@ -64,6 +63,16 @@ TRAIN_CONFIG = {
     'eval_ckpt_name': 'policy_last.ckpt',
     'checkpoint_dir': CHECKPOINT_DIR,
     'ckpt_interval': 100
+}
+
+# Data loading
+DATA_LOADER_CONFIG = {
+    'preload_data': True,           # Pre-load all data into memory (fixes Issue 1)
+    'num_workers_train': 0,         # DataLoader workers for training
+    'num_workers_val': 0,           # DataLoader workers for validation
+    'prefetch_factor': 2,           # Batches to prefetch per worker
+    'persistent_workers': False,     # Keep workers alive between epochs
+    'pin_memory': True              # Use pinned memory for faster GPU transfer
 }
 
 # wandb
