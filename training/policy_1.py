@@ -54,6 +54,11 @@ class ACTPolicy(nn.Module):
         self.rot_weight = args_override['rot_weight']
         self.dist_weight = args_override['dist_weight']
         
+        # --- CORRECTION START ---
+        # Initialize a placeholder for the initial loss
+        self.initial_loss = None 
+        # --- CORRECTION END ---
+        
         print(f'KL Weight {self.kl_weight}')
 
     def __call__(self, qpos, image, actions=None, is_pad=None):
@@ -105,6 +110,21 @@ class ACTPolicy(nn.Module):
                             loss_dict['geodesic_rotation'] * self.rot_weight+ 
                             loss_dict['bce_distance'] * self.dist_weight+ 
                             loss_dict['kl'] * self.kl_weight)
+            
+            # --- CORRECTION START ---
+            # If this is the first step, record the loss as the initial loss.
+            # We use .item() to store the scalar value without keeping the gradient graph.
+            if self.initial_loss is None:
+                self.initial_loss = loss_dict['loss'].item()
+            
+            # Calculate ratio: Current Loss / Initial Loss
+            # Guard against division by zero if initial loss happens to be 0
+            if self.initial_loss != 0:
+                loss_dict['loss_ratio'] = loss_dict['loss'] / self.initial_loss
+            else:
+                loss_dict['loss_ratio'] = torch.tensor(1.0, device=loss_dict['loss'].device)
+            # --- CORRECTION END ---
+            
             return loss_dict
             
         else:  # inference time

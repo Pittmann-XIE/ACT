@@ -651,7 +651,7 @@ def train_one_epoch(policy, train_dataloader, optimizer):
     for batch_idx, data in enumerate(train_dataloader):
         optimizer.zero_grad()
         forward_dict = forward_pass(data, policy)
-        loss = forward_dict['loss']
+        loss = forward_dict['loss_ratio']
         loss.backward()
         optimizer.step()
         epoch_losses.append(loss.item())
