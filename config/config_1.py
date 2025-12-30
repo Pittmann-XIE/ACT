@@ -4,7 +4,7 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = '/mnt/Ego2Exo/pick/pick/h5/pick_corrected'
+DATA_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/datatset/5_6_7'
 
 # checkpoint directory
 CHECKPOINT_DIR = 'checkpoints/'
@@ -34,13 +34,13 @@ TASK_CONFIG = {
 
 # policy config
 POLICY_CONFIG = {
-    'lr': 0.000048,
+    'lr': 6.07e-6,
     'device': device,
-    'num_queries': 100,
-    'kl_weight': 0.162375,
-    'trans_weight': 0.011903,
-    'rot_weight': 0.023487,
-    'dist_weight': 0.017323,
+    'num_queries': 30,
+    'kl_weight': 1.754568,
+    'trans_weight': 0.035264,
+    'rot_weight': 0.027659,
+    'dist_weight': 0.021186,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
@@ -50,19 +50,19 @@ POLICY_CONFIG = {
     'nheads': 8,
     'camera_names': ['front'],
     'policy_class': 'ACT',
-    'temporal_agg': False,
+    'temporal_agg': True,
     'position_encoding': "sine"
 }
 
 # training config
 TRAIN_CONFIG = {
     'seed': 42,
-    'num_epochs': 2000,
+    'num_epochs': 2000/8,  # since we use 8 samples per episode
     'batch_size_val': 8,
     'batch_size_train': 8,
     'eval_ckpt_name': 'policy_last.ckpt',
     'checkpoint_dir': CHECKPOINT_DIR,
-    'ckpt_interval': 100
+    'ckpt_interval': 15
 }
 
 # Data loading

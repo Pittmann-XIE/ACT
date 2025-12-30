@@ -596,7 +596,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, default='pick', help='Task name')
 parser.add_argument('--n_trials', type=int, default=100, help='Number of trials')
 parser.add_argument('--n_epochs_per_trial', type=int, default=50, help='Epochs per trial')
-parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')
+parser.add_argument('--device', type=str, default='cuda:1' if torch.cuda.is_available() else 'cpu')
 parser.add_argument('--db_path', type=str, default='./optuna_study.db', help='Path to save Optuna database')
 parser.add_argument('--no_preload', action='store_true', help='Disable data pre-loading (for memory-constrained systems)')
 args = parser.parse_args()
@@ -709,7 +709,8 @@ def objective(trial: Trial):
             batch_size_train=TRAIN_CONFIG['batch_size_train'],
             batch_size_val=TRAIN_CONFIG['batch_size_val'],
             num_queries=num_queries,
-            data_loader_config=data_loader_config
+            data_loader_config=data_loader_config,
+            samples_per_epoch=8
         )
     except Exception as e:
         logger.error(f"❌ Failed to load data: {e}")

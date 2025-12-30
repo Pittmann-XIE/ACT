@@ -595,7 +595,7 @@ if __name__ == '__main__':
         wandb.init(
             project="ACT_origin",
             entity=None,
-            name=f"{task}_optimized_{train_cfg['seed']}_20251206",
+            name=f"{task}_optimized_{train_cfg['seed']}_20251230_aug_more_samples",
             config={
                 "task": task,
                 **{f"task_cfg/{k}": v for k, v in TASK_CONFIG.items()},
@@ -629,7 +629,8 @@ if __name__ == '__main__':
         batch_size_train=train_cfg['batch_size_train'], 
         batch_size_val=train_cfg['batch_size_val'],
         num_queries=num_queries,
-        data_loader_config=data_loader_config
+        data_loader_config=data_loader_config,
+        samples_per_epoch=8
     )
     
     # save stats
