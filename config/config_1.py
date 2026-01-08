@@ -4,10 +4,10 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/datatset/5_6_7'
+DATA_DIR = '/home/pt/github/ws_ros2humble-main_lab/dataset/5_6_7'
 
 # checkpoint directory
-CHECKPOINT_DIR = 'checkpoints/'
+CHECKPOINT_DIR = '/home/pt/github/ws_ros2humble-main_lab/ACT/checkpoints/'
 
 # device
 device = 'cuda:0'
