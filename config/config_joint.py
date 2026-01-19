@@ -4,13 +4,13 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = 'data/'
+DATA_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/dataset/joint/all_data_merged.h5'
 
 # checkpoint directory
-CHECKPOINT_DIR = 'checkpoints/'
+CHECKPOINT_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/ACT/checkpoints/joint/pick'
 
 # device
-device = 'cpu'
+device = 'cuda'
 if torch.cuda.is_available(): device = 'cuda'
 #if torch.backends.mps.is_available(): device = 'mps'
 os.environ['DEVICE'] = device
@@ -25,12 +25,12 @@ ROBOT_PORTS = {
 # task config (you can add new tasks)
 TASK_CONFIG = {
     'dataset_dir': DATA_DIR,
-    'episode_len': 300,
-    'state_dim': 5,
-    'action_dim': 5,
+    'episode_len': 900, ### FIXME
+    'state_dim': 7,
+    'action_dim': 7,
     'cam_width': 640,
     'cam_height': 480,
-    'camera_names': ['front'],
+    'camera_names': ['aria', 'realsense'],
     'camera_port': 0
 }
 
@@ -41,6 +41,7 @@ POLICY_CONFIG = {
     'device': device,
     'num_queries': 100,
     'kl_weight': 10,
+    'dist_weight': 1.0,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
@@ -48,17 +49,30 @@ POLICY_CONFIG = {
     'enc_layers': 4,
     'dec_layers': 7,
     'nheads': 8,
-    'camera_names': ['front'],
+    'camera_names': ['aria', 'realsense'],
     'policy_class': 'ACT',
-    'temporal_agg': False
+    'temporal_agg': True
 }
 
 # training config
 TRAIN_CONFIG = {
     'seed': 42,
-    'num_epochs': 2000,
+    'num_epochs': 256,#2000/8
     'batch_size_val': 8,
     'batch_size_train': 8,
     'eval_ckpt_name': 'policy_last.ckpt',
     'checkpoint_dir': CHECKPOINT_DIR
 }
+
+# Data loading
+DATA_LOADER_CONFIG = {
+    'preload_data': True,           # Pre-load all data into memory (fixes Issue 1)
+    'num_workers_train': 0,         # DataLoader workers for training
+    'num_workers_val': 0,           # DataLoader workers for validation
+    'prefetch_factor': 2,           # Batches to prefetch per worker
+    'persistent_workers': False,     # Keep workers alive between epochs
+    'pin_memory': True,              # Use pinned memory for faster GPU transfer
+}
+
+# wandb
+USE_WANDB = False

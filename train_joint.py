@@ -1,5 +1,5 @@
 ## Caps number of samples per epoch
-from config.config_1 import POLICY_CONFIG, TASK_CONFIG, TRAIN_CONFIG, USE_WANDB, DATA_LOADER_CONFIG
+from config.config_joint import POLICY_CONFIG, TASK_CONFIG, TRAIN_CONFIG, USE_WANDB, DATA_LOADER_CONFIG
 
 import os
 import pickle
@@ -8,7 +8,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import wandb
 
-from training.utils_1 import *
+from training.utils_joint import *
 
 # parse the task name via command line
 
@@ -116,9 +116,6 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
         policy.train()
         epoch_train_dicts = []
         
-
-
-        
         for batch_idx, data in enumerate(train_dataloader):
 
             forward_dict = forward_pass(data, policy)
@@ -151,7 +148,7 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
             wandb.log(train_log_dict)
 
         # ============ CHECKPOINTING ============
-        if epoch % train_cfg.get('ckpt_interval', 200) == 0:
+        if epoch % train_cfg.get('ckpt_interval', 100) == 0:
             ckpt_path = os.path.join(checkpoint_dir, f"policy_epoch_{epoch}_seed_{train_cfg['seed']}.ckpt")
             torch.save(policy.state_dict(), ckpt_path)
         
@@ -192,7 +189,7 @@ if __name__ == '__main__':
         wandb.init(
             project="ACT_origin",
             entity=None,
-            name=f"{task}_optimized_{train_cfg['seed']}_20251230_aug_more_samples",
+            name=f"{task}_optimized_{train_cfg['seed']}_20260119_joint",
             config={
                 "task": task,
                 **{f"task_cfg/{k}": v for k, v in TASK_CONFIG.items()},
@@ -227,7 +224,8 @@ if __name__ == '__main__':
         batch_size_val=train_cfg['batch_size_val'],
         num_queries=num_queries,
         data_loader_config=data_loader_config,
-        samples_per_epoch=8
+        samples_per_epoch=8,
+        camera_names=policy_config['camera_names']
     )
     
     # save stats
