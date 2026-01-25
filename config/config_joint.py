@@ -4,14 +4,17 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/dataset/joint/all_data_merged.h5'
+DATA_DIR = '../dataset/joint/all_data_merged.h5'
 
 # checkpoint directory
-CHECKPOINT_DIR = '/home/pengtao/thesis/ws_ros2humble-main_lab/ACT/checkpoints/joint/pick'
+CHECKPOINT_DIR = './checkpoints/joint/pick_aria_realsense'
+
+# wandb
+WANDB_NAME = '20260125_joint_aria_realsense'
+USE_WANDB = True
 
 # device
-device = 'cuda'
-if torch.cuda.is_available(): device = 'cuda'
+device = 'cuda:0'
 #if torch.backends.mps.is_available(): device = 'mps'
 os.environ['DEVICE'] = device
 
@@ -25,7 +28,7 @@ ROBOT_PORTS = {
 # task config (you can add new tasks)
 TASK_CONFIG = {
     'dataset_dir': DATA_DIR,
-    'episode_len': 900, ### FIXME
+    'episode_len': 1000, ### FIXME
     'state_dim': 7,
     'action_dim': 7,
     'cam_width': 640,
@@ -39,13 +42,13 @@ TASK_CONFIG = {
 POLICY_CONFIG = {
     'lr': 1e-5,
     'device': device,
-    'num_queries': 100,
+    'num_queries': 10,
     'kl_weight': 10,
     'dist_weight': 1.0,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
-    'backbone': 'resnet18',
+    'backbone': 'resnet34',
     'enc_layers': 4,
     'dec_layers': 7,
     'nheads': 8,
@@ -58,11 +61,12 @@ POLICY_CONFIG = {
 # training config
 TRAIN_CONFIG = {
     'seed': 42,
-    'num_epochs': 256,#2000/8
+    'num_epochs': 2000,#2000/8
     'batch_size_val': 8,
     'batch_size_train': 8,
     'eval_ckpt_name': 'policy_last.ckpt',
-    'checkpoint_dir': CHECKPOINT_DIR
+    'checkpoint_dir': CHECKPOINT_DIR, 
+    'wandb_name': WANDB_NAME
 }
 
 # Data loading
@@ -75,5 +79,3 @@ DATA_LOADER_CONFIG = {
     'pin_memory': True,              # Use pinned memory for faster GPU transfer
 }
 
-# wandb
-USE_WANDB = False

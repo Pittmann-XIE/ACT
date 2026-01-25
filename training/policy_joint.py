@@ -28,6 +28,12 @@ class ACTPolicy(nn.Module):
                                          std=[0.229, 0.224, 0.225])
         image = normalize(image)
         if actions is not None: # training time
+            noise_std = 0.02 
+            qpos_noise = torch.randn_like(qpos[:, :6]) * noise_std
+            corrupted_qpos = qpos.clone()
+            corrupted_qpos[:, :6] += qpos_noise
+            qpos = corrupted_qpos
+            
             actions = actions[:, :self.model.num_queries]
             is_pad = is_pad[:, :self.model.num_queries]
 
