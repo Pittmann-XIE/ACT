@@ -49,9 +49,10 @@ POLICY_CONFIG = {
     'enc_layers': 4,
     'dec_layers': 7,
     'nheads': 8,
-    'camera_names': ['aria', 'realsense'],
+    'camera_names': TASK_CONFIG['camera_names'],
     'policy_class': 'ACT',
-    'temporal_agg': True
+    'temporal_agg': True,
+    'action_dim': TASK_CONFIG['action_dim'],
 }
 
 # training config

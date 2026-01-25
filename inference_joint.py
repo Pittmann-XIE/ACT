@@ -22,66 +22,6 @@ ACT model
 -outputs:
     -- predicted action sequence, including 6 joint angles and one gripper action(open or closed). the 6 joint angles should be de-normalized back to radian by the  provide statics(mean, std)
     -- execute the predicted action sequence with or without action chunking in pybullet, the execution should be collision free. when args.mode=manual, the execution of the action should first be verified in the pybullet that it's collision free and show it future state with ghost robot, then let user to confirm to execute the real robot. 
-
-Notice:
-- the ur3 robot model in pybullet should be the same as the one used in data collection, otherwise, the predicted actions may lead to collisions.
-- the normalization statistics should be calculated from the same dataset as the one used in training the ACT
-'''
-
-'''
-This script is used to run inference of Action chunking transformer model on ur3 robot through pybullet in real world. The execution of actions should be collision free. 
-
-Requiements:
-- ur3 robot model in Pybullet, take the run_ur3_spacemouse.py as an example, keep the settings of the ur3 robot the same(home position, the size and positions of the obstacles).
-- inference with ACT model, take evaluate.py as an example, which is designed for inference with ACT with another type of robot.
-- args.mode: manual and auto  execution. maunal means, for each execution of the action, the robot should wait for user input to proceed to the next action. auto means, the robot will execute all the predicted actions without user input.
-- activate action chunking of the predicted results, when args.action_chunking is True
-
-Inputs:
-- file path of tretrained ACT model checkpoint
-- video stream from aria glasses, take inference_1_real_semiauto.py as an example of how to get the video stream.
-- video stream from realsense D435, you have to google it how to get realsense video stream.
-- robot current state, including 6 joint angles of ur3 robot and gripper state(open or closed), it an be gotten from pybullet directly.
-- mean and std for normalization of joint angles. 
-- ur3 robot IP address
-
-ACT model 
--inputs:
-    -- one image from aria glasses(use the distort images, profile28) and one image realsense D435 (the size is 640x480,30fps). both images should be normalized , must be normalized by the transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])) . the input image size is (H*W): 480x640
-    -- robot current state, including 6 joint angles of ur3 robot and one gripper state(open or closed, open is 1,  close is 0). the 6 joint angles should be in radian and normalized by the provide statics(mean, std)
--outputs:
-    -- predicted action sequence, including 6 joint angles and one gripper action(open or closed). the 6 joint angles should be de-normalized back to radian by the  provide statics(mean, std)
-    -- execute the predicted action sequence with or without action chunking in pybullet, the execution should be collision free. when args.mode=manual, the execution of the action should first be verified in the pybullet that it's collision free and show it future state with ghost robot, then let user to confirm to execute the real robot. 
-
-Notice:
-- the ur3 robot model in pybullet should be the same as the one used in data collection, otherwise, the predicted actions may lead to collisions.
-- the normalization statistics should be calculated from the same dataset as the one used in training the ACT
-'''
-
-'''
-This script is used to run inference of Action chunking transformer model on ur3 robot through pybullet in real world. The execution of actions should be collision free. 
-
-Requiements:
-- ur3 robot model in Pybullet, take the run_ur3_spacemouse.py as an example, keep the settings of the ur3 robot the same(home position, the size and positions of the obstacles).
-- inference with ACT model, take evaluate.py as an example, which is designed for inference with ACT with another type of robot.
-- args.mode: manual and auto  execution. maunal means, for each execution of the action, the robot should wait for user input to proceed to the next action. auto means, the robot will execute all the predicted actions without user input.
-- activate action chunking of the predicted results, when args.action_chunking is True
-
-Inputs:
-- file path of tretrained ACT model checkpoint
-- video stream from aria glasses, take inference_1_real_semiauto.py as an example of how to get the video stream.
-- video stream from realsense D435, you have to google it how to get realsense video stream.
-- robot current state, including 6 joint angles of ur3 robot and gripper state(open or closed), it an be gotten from pybullet directly.
-- mean and std for normalization of joint angles. 
-- ur3 robot IP address
-
-ACT model 
--inputs:
-    -- one image from aria glasses(use the distort images, profile28) and one image realsense D435 (the size is 640x480,30fps). both images should be normalized , must be normalized by the transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])) . the input image size is (H*W): 480x640
-    -- robot current state, including 6 joint angles of ur3 robot and one gripper state(open or closed, open is 1,  close is 0). the 6 joint angles should be in radian and normalized by the provide statics(mean, std)
--outputs:
-    -- predicted action sequence, including 6 joint angles and one gripper action(open or closed). the 6 joint angles should be de-normalized back to radian by the  provide statics(mean, std)
-    -- execute the predicted action sequence with or without action chunking in pybullet, the execution should be collision free. when args.mode=manual, the execution of the action should first be verified in the pybullet that it's collision free and show it future state with ghost robot, then let user to confirm to execute the real robot. 
 '''
 
 import torch
@@ -121,7 +61,7 @@ except ImportError:
     RTDEControlInterface = None
     RTDEReceiveInterface = None
 
-sys.path.append('/home/pt/github/ws_ros2humble-main_lab/ur3_vla_teleop/')
+sys.path.append('/home/pengtao/ws_ros2humble-main_lab/ur3_vla_teleop/')
 
 try:
     from drivers.wsg_driver import WSGGripperDriver
@@ -139,7 +79,7 @@ MANUAL_ACCEL_RAD_S2 = 0.05   # Safe accel for manual steps
 SERVO_DT = 0.15             # Loop time for Auto mode (higher = slower/smoother)
 SERVO_LOOKAHEAD = 0.1
 SERVO_GAIN = 300
-ACTIVE_HORIZON = 20         # Max past predictions to aggregate
+ACTIVE_HORIZON = 2         # Max past predictions to aggregate
 
 # --- HARDWARE ---
 ROBOT_IP = "10.0.0.1" 
@@ -147,10 +87,8 @@ GRIPPER_PORT = "/dev/ttyACM0"
 
 # --- NORMALIZATION ---
 NORM_STATS = {
-    'qpos_mean': np.array([-6.66627123e-15, -2.03346225e-13, -3.59545134e-13, -1.11647319e-15, 1.09370240e-12, -5.57035016e-14], dtype=np.float32),
-    'qpos_std':  np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
-    'action_mean': np.array([-6.66627123e-15, -2.03346225e-13, -3.59545134e-13, -1.11647319e-15, 1.09370240e-12, -5.57035016e-14], dtype=np.float32),
-    'action_std':  np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+    'qpos_mean': np.array([0.48919878, -1.99151537, -1.83667825, -0.15944986, -4.5422106, -0.22052902], dtype=np.float32),
+    'qpos_std':  np.array([0.16403829, 0.34577541, 0.17637353, 0.22534245, 0.12832069, 0.13293354], dtype=np.float32),
 }
 
 # --- ENV CONSTANTS (MATCHING run_ur3_spacemouse.py) ---
@@ -234,70 +172,53 @@ class ThreadedSensor:
 # 2. Camera Classes
 # -----------------------------------------------------------------------------
 
-class AriaCamera:
-    def __init__(self, interface="usb", profile_name="profile28", device_ip=None):
-        print(f"[Aria] Initializing ({interface})...")
-        aria.set_log_level(aria.Level.Info)
-        self.device_client = aria.DeviceClient()
-        client_config = aria.DeviceClientConfig()
-        if device_ip: client_config.ip_v4_address = device_ip
-        self.device_client.set_client_config(client_config)
-        self.device = self.device_client.connect()
-        self.streaming_manager = self.device.streaming_manager
-        self.streaming_client = self.streaming_manager.streaming_client
-        config = aria.StreamingConfig()
-        config.profile_name = profile_name
-        if interface == "usb": config.streaming_interface = aria.StreamingInterface.Usb
-        config.security_options.use_ephemeral_certs = True
-        self.streaming_manager.streaming_config = config
-        self.streaming_manager.start_streaming()
-        sub_config = self.streaming_client.subscription_config
-        sub_config.subscriber_data_type = aria.StreamingDataType.Rgb
-        self.streaming_client.subscription_config = sub_config
-        self.observer = self._Observer()
-        self.streaming_client.set_streaming_client_observer(self.observer)
-        self.streaming_client.subscribe()
+from multiprocessing import shared_memory
+import struct
+class SharedMemoryReceiver:
+    def __init__(self, shm_name, shape=(480, 640, 3)):
+        self.shm_name = shm_name
+        self.shape = shape
+        self.size = np.prod(shape)
+        self.connected = False
+        self.shm = None
+        self._connect()
 
-    class _Observer:
-        def __init__(self): self.image = None
-        def on_image_received(self, img, record): self.image = img
-
-    def get_frame(self):
-        raw = self.observer.image
-        if raw is None: return None
-        # Rotate 90 deg clockwise (Raw format requirement)
-        rot = np.rot90(raw, -1) 
-        img_pil = Image.fromarray(rot).resize((640, 480)) 
-        return np.array(img_pil)
-
-    def stop(self):
+    def _connect(self):
         try:
-            self.streaming_client.unsubscribe()
-            self.streaming_manager.stop_streaming()
-            self.device_client.disconnect(self.device)
-        except: pass
-
-class RealSenseCamera:
-    def __init__(self, width=640, height=480, fps=30):
-        print("[RealSense] Initializing D435...")
-        self.ctx = rs.context()
-        # Hardware Reset to fix "No device connected"
-        if len(self.ctx.query_devices()) > 0:
-            for dev in self.ctx.query_devices():
-                dev.hardware_reset()
-            time.sleep(2.0)
-        
-        self.pipeline = rs.pipeline()
-        self.config = rs.config()
-        self.config.enable_stream(rs.stream.color, width, height, rs.format.rgb8, fps)
-        self.profile = self.pipeline.start(self.config)
+            self.shm = shared_memory.SharedMemory(create=False, name=self.shm_name)
+            self.connected = True
+            print(f"[{self.shm_name}] Connected to Shared Memory.")
+        except FileNotFoundError:
+            print(f"[{self.shm_name}] Waiting for sender...")
 
     def get_frame(self):
-        frames = self.pipeline.wait_for_frames()
-        return np.asanyarray(frames.get_color_frame().get_data())
+        # Auto-reconnect logic
+        if not self.connected:
+            self._connect()
+            if not self.connected: return None
+
+        try:
+            # 1. Read Version (Start)
+            version_start = struct.unpack_from('Q', self.shm.buf, 0)[0]
+            
+            # 2. Copy Data
+            img_buffer = np.ndarray(self.shape, dtype=np.uint8, buffer=self.shm.buf, offset=8)
+            img_copy = img_buffer.copy()
+            
+            # 3. Read Version (End)
+            version_end = struct.unpack_from('Q', self.shm.buf, 0)[0]
+            
+            # 4. Validate (Optimistic Locking)
+            if version_start != version_end or version_start == 0:
+                return None
+            return img_copy
+
+        except Exception:
+            self.connected = False
+            return None
 
     def stop(self):
-        self.pipeline.stop()
+        if self.shm: self.shm.close()
 
 # -----------------------------------------------------------------------------
 # 3. Robot System
@@ -376,21 +297,36 @@ class RobotSystem:
             p.resetJointState(self.sim_robot_id, idx, home_rad[i])
             p.resetJointState(self.ghost_robot_id, idx, home_rad[i])
         p.stepSimulation()
-
+        
+        
     def go_home(self):
         """Moves robot to INIT_JOINTS_DEG position (Blocking)"""
         print(f"[Robot] Moving to Home: {INIT_JOINTS_DEG}")
         home_rad = np.deg2rad(INIT_JOINTS_DEG)
         
+        # --- ADDED: Open Gripper First ---
+        if self.gripper:
+            try:
+                print("[Gripper] Opening...")
+                self.gripper.move(1.0) # 1.0 is Open
+                # Optional: Update internal state to match
+                self.gripper_last_cmd = 1.0 
+                time.sleep(0.5) # Give it a moment to open
+            except Exception as e:
+                print(f"❌ Gripper Open Failed: {e}")
+        # ---------------------------------
+
         # 1. Real Robot (Move slowly)
         if self.rtde_c:
             try:
                 self.rtde_c.moveJ(home_rad, MANUAL_SPEED_RAD_S, MANUAL_ACCEL_RAD_S2)
             except Exception as e:
                 print(f"❌ Move Home Failed: {e}")
+    
         
         # 2. Sim & Ghost (Snap to home)
-        for i, idx in enumerate(self.joint_indices):
+        # --- FIXED LINE BELOW ---
+        for i, idx in enumerate(self.joint_indices): 
             p.resetJointState(self.sim_robot_id, idx, home_rad[i])
             p.resetJointState(self.ghost_robot_id, idx, home_rad[i])
         p.stepSimulation()
@@ -469,50 +405,72 @@ class RobotSystem:
             p.resetJointState(self.ghost_robot_id, idx, action[i])
 
     def execute_action(self, action, mode='manual'):
-        target_joints = action[:6]
-        target_gripper = action[6] 
+            target_joints = action[:6]
+            target_gripper = action[6] 
 
-        if self.check_collision(action):
-            print("⚠️ COLLISION DETECTED! Stopping.")
-            return False
-
-        self.update_ghost(action)
-        
-        if mode == 'manual':
-            for j in range(p.getNumJoints(self.ghost_robot_id)):
-                p.changeVisualShape(self.ghost_robot_id, j, rgbaColor=[0, 1, 0, 0.6])
-            
-            grp_txt = "OPEN" if target_gripper > 0.5 else "CLOSE"
-            print(f"\n   [NEXT] Gripper: {grp_txt} | Joints: {target_joints[:3]}...")
-            user_in = input(f"   >>> Press [Enter] to Execute, [q] to Quit: ")
-            if user_in.lower() == 'q': return False
-            
-            for j in range(p.getNumJoints(self.ghost_robot_id)):
-                p.changeVisualShape(self.ghost_robot_id, j, rgbaColor=[0, 1, 1, 0.4])
-
-        if self.rtde_c:
-            try:
-                if mode == 'auto':
-                    self.rtde_c.servoJ(target_joints, 0.0, 0.0, SERVO_DT, SERVO_LOOKAHEAD, SERVO_GAIN)
-                else:
-                    self.rtde_c.moveJ(target_joints, MANUAL_SPEED_RAD_S, MANUAL_ACCEL_RAD_S2)
-            except Exception as e:
-                print(f"Real Robot Error: {e}")
+            if self.check_collision(action):
+                print("⚠️ COLLISION DETECTED! Stopping.")
                 return False
 
-        if self.gripper:
-            try:
-                cmd_val = 1.0 if target_gripper > 0.5 else 0.0
-                if abs(cmd_val - self.gripper_last_cmd) > 0.1:
-                    self.gripper.move(cmd_val)
-                    self.gripper_last_cmd = cmd_val
-            except Exception as e: print(f"Gripper Error: {e}")
+            self.update_ghost(action)
+            
+            if mode == 'manual':
+                # Visual Feedback
+                for j in range(p.getNumJoints(self.ghost_robot_id)):
+                    p.changeVisualShape(self.ghost_robot_id, j, rgbaColor=[0, 1, 0, 0.6])
+                
+                grp_txt = "OPEN" if target_gripper > 0.5 else "CLOSE"
+                print(f"\n   [NEXT] Gripper: {grp_txt} | Joints: {np.round(target_joints[:3], 2)}...")
+                print(f"   >>> LOOK AT WINDOW: Press 'g' to Execute, 'q/c' to Skip/Quit.")
 
-        for i, idx in enumerate(self.joint_indices):
-            p.resetJointState(self.sim_robot_id, idx, target_joints[i])
-        p.stepSimulation()
-        
-        return True
+                # --- CHANGED: Use OpenCV waitKey instead of input() ---
+                # This keeps the camera windows responsive while waiting
+                user_approved = False
+                while True:
+                    key = cv2.waitKey(10) & 0xFF
+                    if key == ord('g'):
+                        user_approved = True
+                        break
+                    elif key == ord('q') or key == ord('c'):
+                        user_approved = False
+                        break
+                # -----------------------------------------------------
+                
+                # Reset Ghost Color
+                for j in range(p.getNumJoints(self.ghost_robot_id)):
+                    p.changeVisualShape(self.ghost_robot_id, j, rgbaColor=[0, 1, 1, 0.4])
+
+                if not user_approved:
+                    print("   [Skipped]")
+                    return False
+
+            if self.rtde_c:
+                try:
+                    if mode == 'auto':
+                        self.rtde_c.servoJ(target_joints, 0.0, 0.0, SERVO_DT, SERVO_LOOKAHEAD, SERVO_GAIN)
+                    else:
+                        self.rtde_c.moveJ(target_joints, MANUAL_SPEED_RAD_S, MANUAL_ACCEL_RAD_S2)
+                except Exception as e:
+                    print(f"Real Robot Error: {e}")
+                    return False
+
+            if self.gripper:
+                try:
+                    cmd_val = 1.0 if target_gripper > 0.5 else 0.0
+                    if abs(cmd_val - self.gripper_last_cmd) > 0.1:
+                        # --- FIX: THREADED GRIPPER CONTROL ---
+                        # Launch in separate thread to avoid blocking main loop
+                        t = threading.Thread(target=self.gripper.move, args=(cmd_val,), daemon=True)
+                        t.start()
+                        # -------------------------------------
+                        self.gripper_last_cmd = cmd_val
+                except Exception as e: print(f"Gripper Error: {e}")
+
+            for i, idx in enumerate(self.joint_indices):
+                p.resetJointState(self.sim_robot_id, idx, target_joints[i])
+            p.stepSimulation()
+            
+            return True
 
 # -----------------------------------------------------------------------------
 # 4. Main Loop
@@ -535,21 +493,33 @@ def main(args):
     def post_process(a):
         """Denormalize only the 6 joints, keep gripper (index 6) raw."""
         # a shape is (7,). Stats are (6,).
-        joints_denorm = a[:6] * NORM_STATS['action_std'] + NORM_STATS['action_mean']
+        joints_denorm = a[:6] * NORM_STATS['qpos_std'] + NORM_STATS['qpos_mean']
         # Concatenate: [denormalized_joints, raw_gripper]
         return np.concatenate([joints_denorm, a[6:]])
 
 
     policy = make_policy(POLICY_CONFIG['policy_class'], POLICY_CONFIG)
-    policy.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    
+    # Load checkpoint with weights_only=False to handle numpy scalars (epoch/loss) without error
+    print(f"Loading checkpoint: {args.checkpoint}")
+    payload = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    
+    # Handle both "Full State" (dict with 'model_state_dict') and "Weights Only" checkpoints
+    if isinstance(payload, dict) and 'model_state_dict' in payload:
+        print(f"   [Checkpoint] Loading 'model_state_dict' from full checkpoint (Epoch: {payload.get('epoch', 'N/A')})")
+        state_dict = payload['model_state_dict']
+    else:
+        print(f"   [Checkpoint] Loading weights directly")
+        state_dict = payload
+        
+    policy.load_state_dict(state_dict)
     policy.to(device)
     policy.eval()
     
     # Debug: Check camera names order
-    print(f"\n[Config] Expected Camera Order: {POLICY_CONFIG['camera_names']}")
-    # NOTE: The code below assumes POLICY_CONFIG['camera_names'] = ['aria', 'realsense'] 
-    # or similar order. If your config is swapped, swap the stack order below.
-
+    required_cams = POLICY_CONFIG['camera_names']
+    print(f"\n[Config] Model Trained With Cameras: {required_cams}")
+    
     # 1. PHASE 1: Initialize Cameras (Robot Disconnected)
     print("\n" + "="*60)
     print("PHASE 1: SENSOR INITIALIZATION")
@@ -560,9 +530,9 @@ def main(args):
     rs_thread = None
 
     try:
-        aria_thread = ThreadedSensor(AriaCamera, interface=args.aria_interface)
+        aria_thread = ThreadedSensor(SharedMemoryReceiver, shm_name="aria_stream_v1")
         aria_thread.start()
-        rs_thread = ThreadedSensor(RealSenseCamera)
+        rs_thread = ThreadedSensor(SharedMemoryReceiver, shm_name="realsense_stream_v1")
         rs_thread.start()
     except Exception as e:
         print(f"❌ Camera Init Failed: {e}")
@@ -630,7 +600,7 @@ def main(args):
 
             # --- 2. Image Preprocessing ---
             # Ensure RealSense is 640x480 (Aria is already resized in get_frame)
-            if img_rs_raw.shape[:2] != (480, 640):
+            if img_rs_raw is not None and img_rs_raw.shape[:2] != (480, 640):
                 img_rs_proc = cv2.resize(img_rs_raw, (640, 480))
             else:
                 img_rs_proc = img_rs_raw
@@ -665,7 +635,7 @@ def main(args):
                     if key == ord('y'):
                         user_approved = True
                         break
-                    elif key == ord('n'):
+                    elif key == ord('k'):
                         user_approved = False
                         break
                     
@@ -678,10 +648,29 @@ def main(args):
                     print("Skipping inference step...")
                     continue  # Skip to next loop iteration
 
-            # --- 5. Prepare Tensors ---
+            # --- 5. Prepare Tensors Dynamically ---
             t_aria = tf(Image.fromarray(img_aria_raw)).to(device)
             t_rs = tf(Image.fromarray(img_rs_proc)).to(device)
-            img_all = torch.stack([t_aria, t_rs], dim=0).unsqueeze(0)
+            t_aria_fake = torch.zeros_like(t_aria).to(device)
+            t_rs_fake = torch.zeros_like(t_rs).to(device)
+            
+            # Map available tensors to names
+            # 'aria' and 'realsense' are standard names in utils_joint.py
+            camera_map = {
+                'aria': t_aria,
+                'realsense': t_rs,
+            }
+
+            # Construct input list based on Config order
+            tensors_to_stack = []
+            for cam_name in required_cams:
+                if cam_name not in camera_map:
+                    print(f"❌ CRITICAL ERROR: Model expects camera '{cam_name}' but it is not mapped in inference loop.")
+                    raise ValueError(f"Missing camera mapping for {cam_name}")
+                tensors_to_stack.append(camera_map[cam_name])
+            
+            # Stack [Num_Cams, C, H, W] -> [1, Num_Cams, C, H, W]
+            img_all = torch.stack(tensors_to_stack, dim=0).unsqueeze(0)
 
             # --- 6. Inference ---
             with torch.inference_mode():
@@ -731,12 +720,12 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint', type=str, default='checkpoints/pick_1000/pick/policy_epoch_700_seed_42.ckpt', help='Path to ACT policy.ckpt')
+    parser.add_argument('--checkpoint', type=str, default='/home/pengtao/ws_ros2humble-main_lab/ACT/checkpoints/pick_aria_realsense/pick/policy_epoch_400_seed_42.ckpt', help='Path to ACT policy.ckpt')
     parser.add_argument('--robot_ip', type=str, default=ROBOT_IP)
     parser.add_argument('--gripper_port', type=str, default=GRIPPER_PORT)
     parser.add_argument('--aria_interface', type=str, default="usb")
-    parser.add_argument('--mode', type=str, default='manual', choices=['manual', 'auto'])
-    parser.add_argument('--action_chunking', action='store_true', default=False)
+    parser.add_argument('--mode', type=str, default='auto', choices=['manual', 'auto'])
+    parser.add_argument('--action_chunking', action='store_true', default=True, help="Enable action chunking during execution")
     parser.add_argument('--max_timesteps', type=int, default=1000)
     parser.add_argument('--aria', action='store_true', help="Visualize Aria stream", default=True)
     parser.add_argument('--realsense', action='store_true', help="Visualize RealSense stream", default=True)
