@@ -10,7 +10,7 @@ DATA_DIR = '../dataset/joint/all_data_merged.h5'
 CHECKPOINT_DIR = './checkpoints/joint/pick_aria_realsense'
 
 # wandb
-WANDB_NAME = '20260125_joint_aria_realsense'
+WANDB_NAME = '20260126_joint_aria_realsense'
 USE_WANDB = True
 
 # device
@@ -42,12 +42,12 @@ TASK_CONFIG = {
 POLICY_CONFIG = {
     'lr': 1e-5,
     'device': device,
-    'num_queries': 10,
-    'kl_weight': 10,
+    'num_queries': 100,
+    'kl_weight': 0.00155,
     'dist_weight': 1.0,
     'hidden_dim': 512,
     'dim_feedforward': 3200,
-    'lr_backbone': 1e-5,
+    'lr_backbone': 2e-5,
     'backbone': 'resnet34',
     'enc_layers': 4,
     'dec_layers': 7,

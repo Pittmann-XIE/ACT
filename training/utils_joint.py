@@ -5,6 +5,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from einops import rearrange
+import torchvision.transforms.functional as F
 
 from training.policy_joint import ACTPolicy, CNNMLPPolicy
 
@@ -90,18 +91,51 @@ class EpisodicDataset(torch.utils.data.Dataset):
         is_pad[actual_len:] = True
 
         # --- Image Processing & Augmentation ---
+        # all_cam_images = []
+        # for cam_name in self.camera_names:
+        #     img = image_dict[cam_name]
+        #     # Convert to [C, H, W] and scale to [0, 1]
+        #     img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+            
+        #     if self.augment:
+        #         # Lighting Robustness: Shift brightness/contrast
+        #         img_t = COLOR_JITTER(img_t)
+        #         # Spatial Robustness: Small random shifts
+        #         h, w = img_t.shape[1:]
+        #         img_t = transforms.RandomCrop((h, w), padding=4)(img_t)
+            
+        #     all_cam_images.append(img_t)
         all_cam_images = []
         for cam_name in self.camera_names:
             img = image_dict[cam_name]
             # Convert to [C, H, W] and scale to [0, 1]
             img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
             
+            # --- SPECIFIC TRANSFORMATION FOR REALSENSE ---
+            if cam_name == 'realsense':
+                c, h, w = img_t.shape
+                # 1. Keep the left half [0 to W/2], discard the right half
+                img_t = img_t[:, :h//3*2, :w//2]
+                
+                # 2. Resize from (H, W/2) back to (H, W) -> (480, 640)
+                # Using antialias=True for better quality
+                img_t = F.resize(img_t, (h, w), antialias=True)
+            
+            if cam_name == 'aria':
+                c, h, w = img_t.shape
+                # 1. Keep the left half [0 to W/2], discard the right half
+                img_t = img_t[:, h//7*3:h//5*4, w//5:w//5*4]
+                
+                # 2. Resize from (H, W/2) back to (H, W) -> (480, 640)
+                # Using antialias=True for better quality
+                img_t = F.resize(img_t, (h, w), antialias=True)
+            
             if self.augment:
-                # Lighting Robustness: Shift brightness/contrast
+                # Lighting Robustness
                 img_t = COLOR_JITTER(img_t)
                 # Spatial Robustness: Small random shifts
-                h, w = img_t.shape[1:]
-                img_t = transforms.RandomCrop((h, w), padding=4)(img_t)
+                h_now, w_now = img_t.shape[1:]
+                img_t = transforms.RandomCrop((h_now, w_now), padding=4)(img_t)
             
             all_cam_images.append(img_t)
         
@@ -206,11 +240,32 @@ def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+# def get_image(images, camera_names, device='cpu'):
+#     """Inference helper: Scales input image for policy.py."""
+#     curr_images = []
+#     for cam_name in camera_names:
+#         img = images[cam_name]
+#         img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+#         curr_images.append(img_t)
+#     return torch.stack(curr_images, dim=0).to(device).unsqueeze(0)
+
 def get_image(images, camera_names, device='cpu'):
     """Inference helper: Scales input image for policy.py."""
     curr_images = []
     for cam_name in camera_names:
         img = images[cam_name]
         img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        
+        # --- MATCH TRAINING PREPROCESSING ---
+        if cam_name == 'realsense':
+            c, h, w = img_t.shape
+            img_t = img_t[:, :h//3*2, :w//2]  # Crop right half
+            img_t = F.resize(img_t, (h, w), antialias=True) # Stretch back to 480x640
+            
+        if cam_name == 'aria':
+            c, h, w = img_t.shape
+            img_t = img_t[:, h//7*3:h//5*4, w//5:w//5*4]
+            img_t = F.resize(img_t, (h, w), antialias=True) # Stretch back to 480x640
+            
         curr_images.append(img_t)
     return torch.stack(curr_images, dim=0).to(device).unsqueeze(0)

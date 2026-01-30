@@ -28,7 +28,7 @@ class ACTPolicy(nn.Module):
                                          std=[0.229, 0.224, 0.225])
         image = normalize(image)
         if actions is not None: # training time
-            noise_std = 0.02 
+            noise_std = 0.1 
             qpos_noise = torch.randn_like(qpos[:, :6]) * noise_std
             corrupted_qpos = qpos.clone()
             corrupted_qpos[:, :6] += qpos_noise

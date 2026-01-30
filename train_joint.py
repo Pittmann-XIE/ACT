@@ -20,7 +20,7 @@ from training.utils_joint import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, default='pick')
 # --- ADDED ARGS FOR RESUMING ---
-parser.add_argument('--checkpoint', type=str, default=None, help='Path to .ckpt file to resume training from')
+parser.add_argument('--checkpoint', type=str, default='/home/chavvive/ws_ros2humble-main_lab/ACT/checkpoints/joint/pick_aria_realsense/pick/policy_epoch_1300_seed_42.ckpt', help='Path to .ckpt file to resume training from')
 parser.add_argument('--start_epoch', type=int, default=None, help='Epoch to start/resume from. If checkpoint has epoch info, this is ignored.')
 # -------------------------------
 args = parser.parse_args()
