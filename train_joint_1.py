@@ -7,18 +7,25 @@ import argparse
 from copy import deepcopy
 import matplotlib.pyplot as plt
 import wandb
+import torch
+import numpy as np
+import sys
 
 from training.utils_joint_1 import *
 
 # parse the task name via command line
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, default='pick')
+# --- ADDED ARGS FOR RESUMING ---
+parser.add_argument('--checkpoint', type=str, default=None, help='Path to .ckpt file to resume training from')
+parser.add_argument('--start_epoch', type=int, default=None, help='Epoch to start/resume from. If checkpoint has epoch info, this is ignored.')
+# -------------------------------
 args = parser.parse_args()
 task = args.task
+ckpt_path_args = args.checkpoint
+start_epoch_args = args.start_epoch
 
 # configs
-
 task_cfg = TASK_CONFIG
 train_cfg = TRAIN_CONFIG
 policy_config = POLICY_CONFIG
@@ -26,7 +33,6 @@ data_loader_config = DATA_LOADER_CONFIG
 checkpoint_dir = os.path.join(train_cfg['checkpoint_dir'], task)
 
 # device
-
 device = os.environ['DEVICE']
 
 
@@ -43,6 +49,7 @@ def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
         plt.figure()
         train_values = [summary[key].item() for summary in train_history]
         val_values = [summary[key].item() for summary in validation_history]
+        # Adjust x-axis to match actual epochs if history length differs from num_epochs
         plt.plot(np.linspace(0, num_epochs-1, len(train_history)), train_values, label='train')
         plt.plot(np.linspace(0, num_epochs-1, len(validation_history)), val_values, label='validation')
         plt.tight_layout()
@@ -52,7 +59,7 @@ def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
     print(f'Saved plots to {ckpt_dir}')
 
 
-def train_bc(train_dataloader, val_dataloader, policy_config):
+def train_bc(train_dataloader, val_dataloader, policy_config, resume_ckpt=None, start_epoch=0):
     print("\n" + "="*80)
     print("STARTING TRAINING WITH TIMING DIAGNOSTICS")
     print("="*80 + "\n")
@@ -64,6 +71,38 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
     # load optimizer
     optimizer = make_optimizer(policy_config['policy_class'], policy)
 
+    # ============ RESUME LOGIC ============
+    if resume_ckpt is not None:
+        if os.path.isfile(resume_ckpt):
+            print(f"Loading checkpoint from: {resume_ckpt}")
+            
+            # Load checkpoint
+            checkpoint = torch.load(resume_ckpt, map_location=device, weights_only=False)
+            
+            # Check if checkpoint is new format (dict with 'model_state_dict') or old format (just state_dict)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                print("   Detected Full State Checkpoint (Model + Optimizer)")
+                policy.load_state_dict(checkpoint['model_state_dict'])
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                
+                # Auto-update start epoch if stored in checkpoint
+                if 'epoch' in checkpoint:
+                    saved_epoch = checkpoint['epoch']
+                    start_epoch = saved_epoch + 1
+                    print(f"   Resuming from epoch {start_epoch} (Saved epoch was {saved_epoch})")
+            else:
+                print("   Detected Weights-Only Checkpoint")
+                policy.load_state_dict(checkpoint)
+                print(f"   Using command line start_epoch: {start_epoch}")
+                
+            print("Checkpoint loaded successfully.")
+        else:
+            print(f"Warning: Checkpoint file {resume_ckpt} not found. Starting from scratch.")
+    else:
+        # If no checkpoint provided via args, default start_epoch is used (usually 0)
+        pass
+    # ======================================
+
     # create checkpoint dir if not exists
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -72,7 +111,8 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
     min_val_loss = np.inf
     best_ckpt_info = None
     
-    for epoch in range(train_cfg['num_epochs']):
+    # Loop from start_epoch to num_epochs
+    for epoch in range(start_epoch, train_cfg['num_epochs']):
         print("\n" + "="*80)
         print(f'EPOCH {epoch}')
         print("="*80)
@@ -150,10 +190,18 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
         # ============ CHECKPOINTING ============
         if epoch % train_cfg.get('ckpt_interval', 100) == 0:
             ckpt_path = os.path.join(checkpoint_dir, f"policy_epoch_{epoch}_seed_{train_cfg['seed']}.ckpt")
-            torch.save(policy.state_dict(), ckpt_path)
+            
+            # Save FULL state (Model + Optimizer) for interval checkpoints
+            save_payload = {
+                'model_state_dict': policy.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'epoch': epoch,
+                'train_loss': epoch_train_loss,
+                'val_loss': epoch_val_loss
+            }
+            torch.save(save_payload, ckpt_path)
         
         # Flush stdout to see output immediately
-        import sys
         sys.stdout.flush()
 
     # ============ FINAL SAVE ============
@@ -161,15 +209,22 @@ def train_bc(train_dataloader, val_dataloader, policy_config):
     print("SAVING FINAL CHECKPOINTS")
     print("="*80)
     
-    # save final checkpoint
+    # Save final checkpoint (Full State)
     ckpt_path = os.path.join(checkpoint_dir, f'policy_last.ckpt')
-    torch.save(policy.state_dict(), ckpt_path)
+    save_payload = {
+        'model_state_dict': policy.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'epoch': train_cfg['num_epochs'] - 1,
+    }
+    torch.save(save_payload, ckpt_path)
     
-    # save best checkpoint
+    # Save best checkpoint (Weights Only, kept simple for inference compatibility)
     if best_ckpt_info is not None:
         best_epoch, best_loss, best_state = best_ckpt_info
         ckpt_path = os.path.join(checkpoint_dir, f'policy_best.ckpt')
+        # Standard practice: just weights for 'best' inference model
         torch.save(best_state, ckpt_path)
+        
         print(f'   Best epoch: {best_epoch}, Loss: {best_loss:.5f}')
         if USE_WANDB:
             wandb.log({"best_epoch": best_epoch, "best_val_loss": best_loss.item() if hasattr(best_loss, 'item') else best_loss})
@@ -186,12 +241,19 @@ if __name__ == '__main__':
     
     # Initialize wandb
     if USE_WANDB:
+        # If resuming, adjust the name to indicate resumption
+        wandb_name = f"{task}_{train_cfg['seed']}_{train_cfg['wandb_run_name']}"
+        if ckpt_path_args:
+            wandb_name += "_resumed"
+
         wandb.init(
             project="ACT_origin",
             entity=None,
-            name=f"{task}_{train_cfg['seed']}_{train_cfg['wandb_run_name']}",
+            name=wandb_name,
             config={
                 "task": task,
+                "resume_checkpoint": ckpt_path_args,
+                "start_epoch": start_epoch_args,
                 **{f"task_cfg/{k}": v for k, v in TASK_CONFIG.items()},
                 **{f"train_cfg/{k}": v for k, v in TRAIN_CONFIG.items()},
                 **{f"policy_cfg/{k}": v for k, v in POLICY_CONFIG.items()},
@@ -234,8 +296,9 @@ if __name__ == '__main__':
         pickle.dump(stats, f)
 
     # Train
-
-    train_bc(train_dataloader, val_dataloader, policy_config)
+    train_bc(train_dataloader, val_dataloader, policy_config,
+             resume_ckpt=ckpt_path_args,
+             start_epoch=start_epoch_args if start_epoch_args is not None else 0)
     
     print("\n" + "="*80)
     print("TIMING SUMMARY")

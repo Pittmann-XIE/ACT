@@ -6,11 +6,11 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = '/mnt/Ego2Exo/pick_teleop_2/realsense/middle_corner_3rd_vertical/reduced/smooth/normalize/final_merged.h5py'
+DATA_DIR = '/mnt/pick/vertical/final_merged.h5py'
 
 # wandb
-USE_WANDB = False
-WANDB_NAME = '20260130_pick_and_place_single_place_kl'
+USE_WANDB = True
+WANDB_NAME = '20260201_pick_and_place'
 
 # checkpoint directory
 CHECKPOINT_DIR = f'./checkpoints/joint/{WANDB_NAME}'
@@ -48,11 +48,11 @@ POLICY_CONFIG = {
     'lr': 1e-5,
     'device': device,
     'num_queries': 100,
-    'kl_weight': 10.0, ## 0.0003
+    'kl_weight': 10, ## 0.0001 too small, 0.001 too large
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
-    'backbone': 'resnet18',
+    'backbone': 'resnet34',
     'enc_layers': 4,
     'dec_layers': 7,
     'nheads': 8,
@@ -70,7 +70,7 @@ TRAIN_CONFIG = {
     'eval_ckpt_name': 'policy_last.ckpt',
     'checkpoint_dir': CHECKPOINT_DIR,
     'wandb_run_name' : WANDB_NAME,
-    'train_ratio': 0.692307692 # 80/97
+    'train_ratio': 0.888888889 # 72/81
 }
 
 # Data loading
