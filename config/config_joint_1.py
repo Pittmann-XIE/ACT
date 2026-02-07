@@ -58,7 +58,8 @@ POLICY_CONFIG = {
     'nheads': 8,
     'camera_names': TASK_CONFIG['camera_names'],
     'policy_class': 'ACT',
-    'temporal_agg': True
+    'temporal_agg': True,
+    'state_dim': TASK_CONFIG['state_dim'],
 }
 
 # training config

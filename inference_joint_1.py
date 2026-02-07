@@ -76,10 +76,10 @@ except ImportError:
 # --- SAFETY LIMITS ---
 MANUAL_SPEED_RAD_S = 0.1    # Safe speed for manual steps
 MANUAL_ACCEL_RAD_S2 = 0.05   # Safe accel for manual steps
-SERVO_DT = 0.15             # Loop time for Auto mode (higher = slower/smoother)
+SERVO_DT = 0.1             # Loop time for Auto mode (higher = slower/smoother)
 SERVO_LOOKAHEAD = 0.1
 SERVO_GAIN = 300
-ACTIVE_HORIZON = 50        # Max past predictions to aggregate
+ACTIVE_HORIZON = 100        # Max past predictions to aggregate
 
 # --- HARDWARE ---
 ROBOT_IP = "10.0.0.1" 
@@ -91,19 +91,6 @@ CAM_SERIALS = ['105422060444', '104122061227']
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 CAM_FPS = 30
-
-# --- NORMALIZATION ---
-# Stats for Action Denormalization
-ACTION_STATS = {
-    'mean': np.array([0.86896456, -2.10445872, -2.02670824, 0.27098089, -4.75977354, 0.10020535, 42.58346908], dtype=np.float32),
-    'std':  np.array([0.0297698,   0.27371656,  0.08615635, 0.23507212,  0.03747575,  0.02253115, 10.45777954], dtype=np.float32),
-}
-
-# Stats for Qpos Normalization
-QPOS_STATS = {
-    'mean': np.array([0.868991,   -2.10438724, -2.02657384, 0.27090119, -4.7597957,  0.10020759, 42.58346908], dtype=np.float32),
-    'std':  np.array([0.0294178,   0.27258943,  0.08534973, 0.23424898,  0.03734694,  0.02243631, 10.45777954], dtype=np.float32),
-}
 
 # Image Normalization Constants
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -581,15 +568,37 @@ def main(args):
     # Define Normalizer
     normalize = transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
 
-    # 0. Load Policy
+    # --- 0. Load Stats and Policy ---
+    checkpoint_dir = os.path.dirname(args.checkpoint)
+    stats_path = os.path.join(checkpoint_dir, 'dataset_stats.pkl')
+
+    if not os.path.exists(stats_path):
+        # Fallback to parent directory if checkpoint is in a subfolder
+        stats_path = os.path.join(os.path.dirname(checkpoint_dir), 'dataset_stats.pkl')
+
+    try:
+        with open(stats_path, 'rb') as f:
+            stats = pickle.load(f)
+        
+        # Updated to match your flat dictionary structure
+        QPOS_MEAN = stats['qpos_mean']
+        QPOS_STD  = stats['qpos_std']
+        ACTION_MEAN = stats['action_mean']
+        ACTION_STD  = stats['action_std']
+        
+        print(f"✅ Successfully loaded stats from: {stats_path}")
+        print(f"   Shape: Qpos Mean {QPOS_MEAN.shape} | Action Mean {ACTION_MEAN.shape}")
+    except Exception as e:
+        print(f"❌ Failed to load dataset_stats.pkl: {e}")
+        sys.exit(1)
+
     def pre_process(s_qpos):
-        """Normalize both 6 joints and gripper (index 6) using QPOS_STATS."""
-        return (s_qpos - QPOS_STATS['mean']) / QPOS_STATS['std']
+        # Standard normalization: (x - mean) / std
+        return (s_qpos - QPOS_MEAN) / QPOS_STD
 
     def post_process(a):
-        """Denormalize both 6 joints and gripper (index 6) using ACTION_STATS."""
-        return a * ACTION_STATS['std'] + ACTION_STATS['mean']
-
+        # De-normalization: (x * std) + mean
+        return a * ACTION_STD + ACTION_MEAN
 
     policy = make_policy(POLICY_CONFIG['policy_class'], POLICY_CONFIG)
     
@@ -789,29 +798,31 @@ def main(args):
 
             # --- 5. Action Selection ---
             if args.action_chunking:
-                # TEMPORAL ENSEMBLING
+                # Fill temporal buffer with new prediction
                 all_time_actions[[t], t : t + num_queries] = all_actions
+                
+                # Retrieve all overlapping predictions for the current timestep t
                 actions_for_curr_step = all_time_actions[:, t]
                 actions_valid = actions_for_curr_step[~torch.isnan(actions_for_curr_step[:, 0])]
+                
                 if len(actions_valid) > ACTIVE_HORIZON:
                     actions_valid = actions_valid[-ACTIVE_HORIZON:]
                 
-                k = 0.01
-                exp_weights = np.exp(-k * np.arange(len(actions_valid)))
+                # Temporal Ensembling Weighting
+                k = 0.01 
+                # Reverse indices so the newest prediction (last index) gets the highest weight
+                # np.arange(len)[::-1] -> [N-1, N-2, ..., 0]
+                indices = np.arange(len(actions_valid))[::-1]
+                exp_weights = np.exp(-k * indices)
                 exp_weights = exp_weights / exp_weights.sum()
                 exp_weights = torch.from_numpy(exp_weights.astype(np.float32)).to(device).unsqueeze(dim=1)
                 
-                raw_action = (actions_valid * exp_weights).sum(dim=0, keepdim=True).squeeze(0).cpu().numpy()
+                # Weighted average of valid actions
+                raw_action = (actions_valid * exp_weights).sum(dim=0).cpu().numpy()
             else:
-                # OPEN LOOP EXECUTION OF N STEPS
-                # We reuse the prediction 'all_actions' for query_freq steps.
-                # 't % query_freq' moves from 0 to (query_freq - 1).
-                # Example: steps_per_inference=10. Indices 0..9 are executed. At 10, new inference.
-                if all_actions is None:
-                    print("❌ Error: all_actions is None, inference logic failed.")
-                    break
+                # Standard Open Loop Execution
                 raw_action = all_actions[:, t % query_freq].squeeze(0).cpu().numpy()
-
+                
             # --- 6. Execution ---
             action = post_process(raw_action)
             success = env.execute_action(action, mode=args.mode)
@@ -840,7 +851,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint', type=str, default='/home/pengtao/ws_ros2humble-main_lab/ACT/checkpoints/joint/20260130_pick_and_place_single_place_kl/pick/policy_epoch_500_seed_42.ckpt', help='Path to ACT policy.ckpt')
+    parser.add_argument('--checkpoint', type=str, default='/home/pengtao/ws_ros2humble-main_lab/ACT/checkpoints/joint/20260206_pick_and_place_156/pick/policy_step_92000.ckpt', help='Path to ACT policy.ckpt')
     parser.add_argument('--robot_ip', type=str, default=ROBOT_IP)
     parser.add_argument('--gripper_port', type=str, default=GRIPPER_PORT)
     parser.add_argument('--mode', type=str, default='auto', choices=['manual', 'auto'])
