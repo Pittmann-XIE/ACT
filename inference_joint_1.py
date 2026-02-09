@@ -79,7 +79,7 @@ MANUAL_ACCEL_RAD_S2 = 0.05   # Safe accel for manual steps
 SERVO_DT = 0.1             # Loop time for Auto mode (higher = slower/smoother)
 SERVO_LOOKAHEAD = 0.1
 SERVO_GAIN = 300
-ACTIVE_HORIZON = 100        # Max past predictions to aggregate
+ACTIVE_HORIZON = 20        # Max past predictions to aggregate
 
 # --- HARDWARE ---
 ROBOT_IP = "10.0.0.1" 
@@ -174,7 +174,7 @@ class ThreadedSensor:
 # 2. Camera Classes
 # -----------------------------------------------------------------------------
 
-from multiprocessing import shared_memory
+from multiprocessing import shared_memory, resource_tracker
 import struct
 
 class SharedMemoryReceiver:
@@ -186,9 +186,22 @@ class SharedMemoryReceiver:
         self.shm = None
         self._connect()
 
+    # def _connect(self):
+    #     try:
+    #         self.shm = shared_memory.SharedMemory(create=False, name=self.shm_name)
+    #         self.connected = True
+    #         print(f"[{self.shm_name}] Connected to Shared Memory.")
+    #     except FileNotFoundError:
+    #         print(f"[{self.shm_name}] Waiting for sender...")
     def _connect(self):
         try:
             self.shm = shared_memory.SharedMemory(create=False, name=self.shm_name)
+            
+            # --- FIX: Prevent resource tracker from destroying SHM on exit ---
+            # This tells the process: "I am using this, but I don't own it. Do not unlink it."
+            resource_tracker.unregister(self.shm._name, 'shared_memory')
+            # ---------------------------------------------------------------
+
             self.connected = True
             print(f"[{self.shm_name}] Connected to Shared Memory.")
         except FileNotFoundError:
@@ -860,7 +873,7 @@ if __name__ == '__main__':
     parser.add_argument('--action_chunking', action='store_true', default=True, help="Enable action chunking (temporal ensembling)")
     parser.add_argument('--steps_per_inference', type=int, default=1, help="If NO chunking, how many steps to execute before re-predicting. Default: Execute all.")
     
-    parser.add_argument('--max_timesteps', type=int, default=1000)
+    parser.add_argument('--max_timesteps', type=int, default=10000)
     parser.add_argument('--visualize', action='store_true', help="Visualize active camera streams", default=True)
     
     args = parser.parse_args()
