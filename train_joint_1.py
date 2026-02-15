@@ -285,9 +285,10 @@ if __name__ == '__main__':
         batch_size_val=train_cfg['batch_size_val'],
         num_queries=num_queries,
         data_loader_config=data_loader_config,
-        samples_per_epoch=8,
+        samples_per_epoch=TRAIN_CONFIG['samples_per_epoch'],
         camera_names=policy_config['camera_names'],
-        train_ratio = train_cfg['train_ratio']
+        train_ratio = train_cfg['train_ratio'],
+        state_dim=TASK_CONFIG['state_dim']
     )
     
     # save stats

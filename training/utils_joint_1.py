@@ -31,94 +31,9 @@ def print_h5_structure(dataset_path):
         f.visititems(print_attrs)
     print("="*50 + "\n")
 
-# class EpisodicDataset(torch.utils.data.Dataset):
-#     def __init__(self, episode_keys, dataset_path, camera_names, num_queries, augment=False):
-#         super(EpisodicDataset).__init__()
-#         self.episode_keys = episode_keys
-#         self.dataset_path = dataset_path
-#         self.camera_names = camera_names
-#         self.num_queries = num_queries
-#         self.augment = augment
-
-#     def __len__(self):
-#         return len(self.episode_keys)
-
-#     def __getitem__(self, index):
-#         episode_key = self.episode_keys[index]
-        
-#         with h5py.File(self.dataset_path, 'r') as root:
-#             demo = root[episode_key]
-            
-#             # --- 1. Load State (Input) ---
-#             # Arm Qpos (6D)
-#             qpos_arm = demo['observations/qpos'][()]
-#             # Gripper State (1D)
-#             gripper_state = demo['observations/gripper_state'][()]
-#             if gripper_state.ndim == 1:
-#                 gripper_state = gripper_state[:, np.newaxis]
-            
-#             # Full State: (T, 7)
-#             full_qpos = np.concatenate([qpos_arm, gripper_state], axis=1).astype(np.float32)
-#             episode_len = full_qpos.shape[0]
-
-#             # --- 2. Load Action (Target) ---
-#             # Arm Action (6D)
-#             action_arm = demo['action'][()]
-#             # Gripper Action (1D) - In this dataset, gripper state serves as the action target
-#             # Full Action: (T, 7)
-#             full_action = np.concatenate([action_arm, gripper_state], axis=1).astype(np.float32)
-
-#             # Sample a random start time t
-#             # Ensure we don't pick the very last step if we need at least one action
-#             start_ts = np.random.choice(episode_len)
-            
-#             # INPUT: State at current time t
-#             qpos_input = full_qpos[start_ts]
-            
-#             # TARGET: Sequence of actions starting from t
-#             # Note: ACT usually predicts actions from t to t+k
-#             action_seq = full_action[start_ts:] 
-#             action_len = action_seq.shape[0]
-
-#             # --- 3. Load Images ---
-#             image_dict = dict()
-#             for cam_name in self.camera_names:
-#                 # Updated path: observations/images/cam1_rgb
-#                 h5_cam_key = f'observations/images/{cam_name}'
-#                 image_dict[cam_name] = demo[h5_cam_key][start_ts]
-
-#         # --- Padding Action Sequence ---
-#         padded_action = np.zeros((self.num_queries, 7), dtype=np.float32)
-#         actual_len = min(action_len, self.num_queries)
-        
-#         if actual_len > 0:
-#             padded_action[:actual_len] = action_seq[:actual_len]
-        
-#         # is_pad: True for steps beyond the end of the trajectory
-#         is_pad = np.zeros(self.num_queries, dtype=bool)
-#         is_pad[actual_len:] = True
-
-#         # --- Image Processing & Augmentation ---
-#         all_cam_images = []
-#         for cam_name in self.camera_names:
-#             img = image_dict[cam_name]
-#             # Convert to [C, H, W] and scale to [0, 1]
-#             img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
-            
-#             if self.augment:
-#                 img_t = COLOR_JITTER(img_t)
-            
-#             all_cam_images.append(img_t)
-        
-#         image_data = torch.stack(all_cam_images, dim=0)
-#         qpos_data = torch.from_numpy(qpos_input).float()
-#         action_data = torch.from_numpy(padded_action).float()
-#         is_pad = torch.from_numpy(is_pad).bool()
-
-#         return image_data, qpos_data, action_data, is_pad
 
 class EpisodicDataset(torch.utils.data.Dataset):
-    def __init__(self, episode_keys, dataset_path, camera_names, num_queries, augment=False):
+    def __init__(self, episode_keys, dataset_path, camera_names, num_queries, augment=False, state_dim=7):
         super(EpisodicDataset).__init__()
         self.episode_keys = episode_keys
         self.dataset_path = dataset_path
@@ -130,6 +45,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         # We cannot open the file here because h5py objects cannot be pickled 
         # for multiple DataLoader workers.
         self.h5_file = None 
+        self.state_dim = state_dim
 
     def __len__(self):
         return len(self.episode_keys)
@@ -190,7 +106,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
             image_dict[cam_name] = demo[h5_cam_key][start_ts]
 
         # --- Padding Action Sequence ---
-        padded_action = np.zeros((self.num_queries, 7), dtype=np.float32)
+        padded_action = np.zeros((self.num_queries, self.state_dim), dtype=np.float32)
         if actual_len > 0:
             padded_action[:actual_len] = action_seq
         
@@ -209,11 +125,11 @@ class EpisodicDataset(torch.utils.data.Dataset):
         image_data = torch.stack(all_cam_images, dim=0)
         qpos_data = torch.from_numpy(full_qpos).float()
         
-        ## edited
-        if self.augment and np.random.rand() < 0.10:  # 10% chance
-            # Mask the joint positions with zeros (which represents the MEAN pose)
-            qpos_data = torch.zeros_like(qpos_data)
-        ##
+        # ## edited
+        # if self.augment and np.random.rand() < 0.10:  # 10% chance
+        #     # Mask the joint positions with zeros (which represents the MEAN pose)
+        #     qpos_data = torch.zeros_like(qpos_data)
+        # ##
             
         action_data = torch.from_numpy(padded_action).float()
         is_pad = torch.from_numpy(is_pad).bool()
@@ -262,7 +178,7 @@ def get_norm_stats(dataset_path):
 
 
 def load_data(dataset_path, batch_size_train, batch_size_val, camera_names, 
-              num_queries=8, samples_per_epoch=1, train_ratio=0.9, **kwargs):
+              num_queries=8, samples_per_epoch=1, train_ratio=0.9, state_dim=7, **kwargs):
     
     if isinstance(camera_names, str):
         camera_names = [camera_names]
@@ -294,8 +210,8 @@ def load_data(dataset_path, batch_size_train, batch_size_val, camera_names,
 
     norm_stats = get_norm_stats(dataset_path)
 
-    train_dataset = EpisodicDataset(train_keys, dataset_path, camera_names, num_queries, augment=True)
-    val_dataset = EpisodicDataset(val_keys, dataset_path, camera_names, num_queries, augment=False)
+    train_dataset = EpisodicDataset(train_keys, dataset_path, camera_names, num_queries, augment=True, state_dim=state_dim)
+    val_dataset = EpisodicDataset(val_keys, dataset_path, camera_names, num_queries, augment=False, state_dim=state_dim)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers=2)
     val_loader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=2)

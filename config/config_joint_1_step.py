@@ -6,18 +6,18 @@ os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = "1"
 import torch
 
 # data directory
-DATA_DIR = '/mnt/pick/converted.h5py'
+DATA_DIR = '/mnt/pick/random/final_merged.h5py'
 
 # wandb
 USE_WANDB = False
-WANDB_NAME = '20260201_pick_and_place_lerobot'
+WANDB_NAME = '20260214_pick_and_place_66_realsense'
 
 # checkpoint directory
 CHECKPOINT_DIR = f'./checkpoints/joint/{WANDB_NAME}'
 
 
 # device
-device = 'cuda:1'
+device = 'cuda:0'
 
 #if torch.backends.mps.is_available(): device = 'mps'
 os.environ['DEVICE'] = device
@@ -34,7 +34,7 @@ ROBOT_PORTS = {
 TASK_CONFIG = {
     'dataset_dir': DATA_DIR,
     'episode_len': 900, ### FIXME
-    'state_dim': 6,
+    'state_dim': 7,
     'action_dim': 6,
     'cam_width': 640,
     'cam_height': 480,
@@ -48,7 +48,7 @@ POLICY_CONFIG = {
     'lr': 1e-5,
     'device': device,
     'num_queries': 100,
-    'kl_weight': 10, ## 0.00005 too large
+    'kl_weight': 10, ## 0.0001 too large
     'hidden_dim': 512,
     'dim_feedforward': 3200,
     'lr_backbone': 1e-5,
@@ -66,13 +66,16 @@ POLICY_CONFIG = {
 TRAIN_CONFIG = {
     'seed': 42,
     'num_epochs': 125,#2000/8
-    'batch_size_val': 8,
-    'batch_size_train': 8,
+    'batch_size_val': 16,
+    'batch_size_train': 16,
     'eval_ckpt_name': 'policy_last.ckpt',
     'checkpoint_dir': CHECKPOINT_DIR,
     'wandb_run_name' : WANDB_NAME,
-    'train_ratio': 0.64,# 32/50
-    'samples_per_epoch': 1
+    'train_ratio': 0.757575758,
+    'samples_per_epoch': 1,
+    'max_steps': 200000,      # Total training steps (Standard ACT uses 100k)
+    'eval_interval': 1852,    # Run validation every X steps
+    'save_interval': 1852*3,    # Save a checkpoint every X steps
 }
 
 # Data loading
