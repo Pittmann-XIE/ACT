@@ -445,8 +445,8 @@ def load_data(dataset_path, batch_size_train, batch_size_val, camera_names,
 
     # 5. Create Loaders
     # shuffle=True ensures we see every frame, but in random order (standard SGD)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False, pin_memory=True, num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=True, num_workers=0)
 
     return train_loader, val_loader, norm_stats, False
 
