@@ -49,8 +49,8 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import aria.sdk as aria
-from training.utils_joint_1 import make_policy
-from config.config_joint_1 import POLICY_CONFIG, TASK_CONFIG
+from training.utils_joint_1_step import make_policy
+from config.config_joint_1_step import POLICY_CONFIG, TASK_CONFIG
 
 # --- Driver Imports ---
 try:
@@ -79,7 +79,7 @@ MANUAL_ACCEL_RAD_S2 = 0.05   # Safe accel for manual steps
 SERVO_DT = 0.1             # Loop time for Auto mode (higher = slower/smoother)
 SERVO_LOOKAHEAD = 0.1
 SERVO_GAIN = 300
-ACTIVE_HORIZON = 20        # Max past predictions to aggregate
+ACTIVE_HORIZON = 100       # Max past predictions to aggregate
 
 # --- HARDWARE ---
 ROBOT_IP = "10.0.0.1" 
@@ -87,7 +87,7 @@ GRIPPER_PORT = "/dev/ttyACM0"
 
 # --- CAMERAS ---
 # Serial numbers for RealSense cameras: [Camera 1, Camera 2]
-CAM_SERIALS = ['105422060444', '104122061227']
+CAM_SERIALS = ['104122061227', '105422061000']
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 CAM_FPS = 30
@@ -121,10 +121,6 @@ def get_object_transforms(pos_world_arr, rot_z_deg):
     quat_world = r_obj_local.as_quat()
     return pos_robot, quat_robot, pos_world, quat_world
 
-# -----------------------------------------------------------------------------
-# 1. Threaded Wrapper
-# -----------------------------------------------------------------------------
-
 class ThreadedSensor:
     def __init__(self, sensor_class, *args, **kwargs):
         self.sensor_name = sensor_class.__name__
@@ -139,6 +135,12 @@ class ThreadedSensor:
         self.timestamp = 0
         self.running = False
         self.thread = None
+        
+        # --- FPS Counter Variables ---
+        self.measured_fps = 0.0
+        self._frame_counter = 0
+        self._last_fps_time = time.time()
+        # -----------------------------
 
     def start(self):
         self.running = True
@@ -153,6 +155,17 @@ class ThreadedSensor:
                     with self.lock:
                         self.latest_data = data
                         self.timestamp = time.time()
+                        
+                        # --- FPS Calculation ---
+                        self._frame_counter += 1
+                        now = time.time()
+                        elapsed = now - self._last_fps_time
+                        if elapsed >= 1.0: # Update every 1 second
+                            self.measured_fps = self._frame_counter / elapsed
+                            self._frame_counter = 0
+                            self._last_fps_time = now
+                        # -----------------------
+                        
             except Exception as e:
                 print(f"❌ {self.sensor_name} Thread Error: {e}")
                 time.sleep(1.0)
@@ -160,8 +173,8 @@ class ThreadedSensor:
 
     def get_latest(self):
         with self.lock:
-            if self.latest_data is None: return None, 0
-            return self.latest_data.copy(), self.timestamp
+            if self.latest_data is None: return None, 0, 0.0
+            return self.latest_data.copy(), self.timestamp, self.measured_fps # Return FPS too
 
     def stop(self):
         self.running = False
@@ -531,9 +544,9 @@ class RobotSystem:
 
                     # Thresholds (Tune these based on your object size/noise)
                     # If Open, wait until < 49.0 to Close (High sensitivity to start grasping)
-                    TO_CLOSE_THRESH = 49.0  
+                    TO_CLOSE_THRESH = 45 
                     # If Closed, wait until > 49.5 to Open (Ensure we really want to release)
-                    TO_OPEN_THRESH = 49.5   
+                    TO_OPEN_THRESH = 45  
 
                     current_width = float(target_gripper)
                     is_currently_open = (self.gripper_last_cmd > 0.5)
@@ -574,6 +587,304 @@ class RobotSystem:
 # 4. Main Loop
 # -----------------------------------------------------------------------------
 
+# def main(args):
+#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#     print(f"Using device: {device}")
+    
+#     # Define Normalizer
+#     normalize = transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+
+#     # --- 0. Load Stats and Policy ---
+#     checkpoint_dir = os.path.dirname(args.checkpoint)
+#     stats_path = os.path.join(checkpoint_dir, 'dataset_stats.pkl')
+
+#     if not os.path.exists(stats_path):
+#         # Fallback to parent directory if checkpoint is in a subfolder
+#         stats_path = os.path.join(os.path.dirname(checkpoint_dir), 'dataset_stats.pkl')
+
+#     try:
+#         with open(stats_path, 'rb') as f:
+#             stats = pickle.load(f)
+        
+#         # Updated to match your flat dictionary structure
+#         QPOS_MEAN = stats['qpos_mean']
+#         QPOS_STD  = stats['qpos_std']
+#         ACTION_MEAN = stats['action_mean']
+#         ACTION_STD  = stats['action_std']
+        
+#         print(f"✅ Successfully loaded stats from: {stats_path}")
+#         print(f"   Shape: Qpos Mean {QPOS_MEAN.shape} | Action Mean {ACTION_MEAN.shape}")
+#     except Exception as e:
+#         print(f"❌ Failed to load dataset_stats.pkl: {e}")
+#         sys.exit(1)
+
+#     def pre_process(s_qpos):
+#         # Standard normalization: (x - mean) / std
+#         return (s_qpos - QPOS_MEAN) / QPOS_STD
+
+#     def post_process(a):
+#         # De-normalization: (x * std) + mean
+#         return a * ACTION_STD + ACTION_MEAN
+
+#     policy = make_policy(POLICY_CONFIG['policy_class'], POLICY_CONFIG)
+    
+#     # Load checkpoint with weights_only=False to handle numpy scalars (epoch/loss) without error
+#     print(f"Loading checkpoint: {args.checkpoint}")
+#     payload = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    
+#     # Handle both "Full State" (dict with 'model_state_dict') and "Weights Only" checkpoints
+#     if isinstance(payload, dict) and 'model_state_dict' in payload:
+#         print(f"   [Checkpoint] Loading 'model_state_dict' from full checkpoint (Epoch: {payload.get('epoch', 'N/A')})")
+#         state_dict = payload['model_state_dict']
+#     else:
+#         print(f"   [Checkpoint] Loading weights directly")
+#         state_dict = payload
+        
+#     policy.load_state_dict(state_dict)
+#     policy.to(device)
+#     policy.eval()
+    
+#     # Debug: Check camera names order
+#     required_cams = POLICY_CONFIG['camera_names']
+#     print(f"\n[Config] Model Trained With Cameras: {required_cams}")
+    
+#     # 1. PHASE 1: Initialize Cameras (Robot Disconnected)
+#     print("\n" + "="*60)
+#     print("PHASE 1: SENSOR INITIALIZATION")
+#     print("⚠️  Ensure Robot Ethernet is DISCONNECTED to avoid Aria conflicts.")
+#     print("="*60 + "\n")
+    
+#     active_sensors = {}
+    
+#     try:
+#         # Initialize only the cameras required by the config
+#         # 'aria' uses SharedMemory. 'cam1' and 'cam2' use RealSense via USB.
+        
+#         if 'aria' in required_cams:
+#             print("[Sensor] Starting Aria (Shared Memory)...")
+#             active_sensors['aria'] = ThreadedSensor(SharedMemoryReceiver, shm_name="aria_stream_v1")
+#             active_sensors['aria'].start()
+        
+#         if 'cam1_rgb' in required_cams:
+#             print(f"[Sensor] Starting Cam 1 (Serial: {CAM_SERIALS[0]})...")
+#             active_sensors['cam1_rgb'] = ThreadedSensor(RealSenseCamera, serial_number=CAM_SERIALS[0])
+#             active_sensors['cam1_rgb'].start()
+            
+#         if 'cam2_rgb' in required_cams:
+#             print(f"[Sensor] Starting Cam 2 (Serial: {CAM_SERIALS[1]})...")
+#             active_sensors['cam2_rgb'] = ThreadedSensor(RealSenseCamera, serial_number=CAM_SERIALS[1])
+#             active_sensors['cam2_rgb'].start()
+
+#     except Exception as e:
+#         print(f"❌ Camera Init Failed: {e}")
+#         return
+
+#     # Wait for streams
+#     print("Waiting for video streams...")
+#     while True:
+#         all_ready = True
+#         for name, sensor in active_sensors.items():
+#             _, t_stamp,_ = sensor.get_latest()
+#             if t_stamp == 0:
+#                 all_ready = False
+#                 break
+        
+#         if all_ready:
+#             print(f"✅ All {len(active_sensors)} Cameras Ready.")
+#             break
+#         time.sleep(0.5)
+
+#     # 2. PHASE 2: Connect Robot
+#     print("\n" + "="*60)
+#     print("PHASE 2: ROBOT CONNECTION")
+#     print("👉 ACTION REQUIRED: Connect the Ethernet cable to the UR3 robot now.")
+#     print("="*60 + "\n")
+    
+#     input("Press [Enter] ONLY after you have connected the robot cable...")
+
+#     # 3. PHASE 3: Initialize Robot & Go Home
+#     print("\n[System] Connecting to Robot & Gripper...")
+#     env = RobotSystem(args.robot_ip, args.gripper_port)
+    
+#     # --- GO HOME ---
+#     env.go_home()
+#     # ---------------
+
+#     print(f"\n✅ SYSTEM READY. Mode: {args.mode.upper()}")
+    
+#     # --- LOGIC: EXECUTE FIRST N ACTIONS ---
+#     num_queries = POLICY_CONFIG['num_queries']
+    
+#     if args.action_chunking:
+#         query_freq = 1
+#     else:
+#         # If execution steps is specified, use it. Otherwise execute all queries.
+#         if args.steps_per_inference:
+#             query_freq = min(args.steps_per_inference, num_queries)
+#         else:
+#             query_freq = num_queries
+            
+#     print(f"[Strategy] Chunking: {args.action_chunking}, Frequency: {query_freq}")
+    
+#     all_time_actions = torch.full(
+#         [args.max_timesteps, args.max_timesteps + num_queries,TASK_CONFIG['state_dim']],
+#         float('nan')
+#     ).to(device)
+    
+#     # Initialize all_actions with None to track first run
+#     all_actions = None
+    
+#     t = 0
+#     try:
+#         while t < args.max_timesteps:
+#             loop_start = time.time()
+            
+#             # --- 1. Capture Data ---
+#             qpos_raw = env.get_qpos_real()
+#             qpos_norm = pre_process(qpos_raw)
+#             qpos_tensor = torch.from_numpy(qpos_norm).float().to(device).unsqueeze(0)
+            
+#             # Collect images dynamically based on config
+#             latest_images = {}
+#             latest_fps = {} # Store FPS
+
+#             for cam_name, sensor in active_sensors.items():
+#                 # UNPACK 3 VALUES NOW: img, timestamp, fps
+#                 img_raw, ts, fps = sensor.get_latest()
+#                 latest_images[cam_name] = img_raw
+#                 latest_fps[cam_name] = fps
+                
+#                 # Check latency (Lag > 0.5s)
+#                 if (time.time() - ts > 0.5) and ts > 0:
+#                      # Make the warning visible in console
+#                      print(f"⚠️ LAG WARNING: {cam_name} is {time.time() - ts:.2f}s behind!")
+
+#             # --- 2. Visualization & Processing ---
+#             tensors_to_stack = []
+            
+#             for cam_name in required_cams:
+#                 if cam_name not in latest_images or latest_images[cam_name] is None:
+#                     print(f"CRITICAL: Missing frame for {cam_name}")
+#                     continue
+
+#                 img_vis = latest_images[cam_name]
+                
+#                 # Visualize with FPS Overlay
+#                 if args.visualize:
+#                     bgr = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
+                    
+#                     # --- DRAW FPS ---
+#                     fps_val = latest_fps.get(cam_name, 0.0)
+                    
+#                     # Color Logic: Green = Good (>20), Red = Bad (<10)
+#                     color = (0, 255, 0) if fps_val > 20 else (0, 0, 255)
+                    
+#                     text = f"FPS: {fps_val:.1f}"
+#                     cv2.putText(bgr, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+#                                 1.0, color, 2, cv2.LINE_AA)
+#                     # ----------------
+                    
+#                     cv2.imshow(f"Input: {cam_name}", bgr)
+
+#                 # Preprocess... (rest of your code remains the same)
+#                 img_t = torch.from_numpy(img_vis).permute(2, 0, 1).float() / 255.0
+#                 img_t = normalize(img_t)
+#                 tensors_to_stack.append(img_t.to(device))
+            
+#             if args.visualize:
+#                 cv2.waitKey(1)
+
+#             # --- 3. User Verification (Pre-Inference) ---
+#             if args.mode == 'manual':
+#                 print("-" * 40)
+#                 print(f"Current Joints:  {np.round(qpos_raw[:6], 3)}")
+#                 print(f"Current Gripper: {qpos_raw[6]}")
+#                 print(">>> Press 'y' in the IMAGE WINDOW to confirm, 'n' to skip.")
+#                 print("-" * 40)
+
+#                 user_approved = False
+#                 while True:
+#                     key = cv2.waitKey(30) & 0xFF
+#                     if key == ord('y'):
+#                         user_approved = True
+#                         break
+#                     elif key == ord('k'): # 'k' for skip
+#                         user_approved = False
+#                         break
+                    
+#                     # Check if windows closed
+#                     if len(required_cams) > 0:
+#                         first_cam = required_cams[0]
+#                         if cv2.getWindowProperty(f"Input: {first_cam}", cv2.WND_PROP_VISIBLE) < 1:
+#                             user_approved = False
+#                             break
+
+#                 if not user_approved:
+#                     print("Skipping inference step...")
+#                     continue
+
+#             # --- 4. Inference ---
+#             # Stack [Num_Cams, C, H, W] -> [1, Num_Cams, C, H, W]
+#             img_all = torch.stack(tensors_to_stack, dim=0).unsqueeze(0)
+#             # img_all_black = torch.zeros_like(img_all)
+
+#             # Logic: If chunking is ON, run every step.
+#             # If chunking is OFF, run only when t % query_freq == 0 (start of new N-step block).
+#             if args.action_chunking or (t % query_freq == 0):
+#                 with torch.inference_mode():
+#                     all_actions, attn_weights = policy(qpos_tensor, img_all)
+
+#             # --- 5. Action Selection ---
+#             if args.action_chunking:
+#                 # Fill temporal buffer with new prediction
+#                 all_time_actions[[t], t : t + num_queries] = all_actions
+                
+#                 # Retrieve all overlapping predictions for the current timestep t
+#                 actions_for_curr_step = all_time_actions[:, t]
+#                 actions_valid = actions_for_curr_step[~torch.isnan(actions_for_curr_step[:, 0])]
+                
+#                 if len(actions_valid) > ACTIVE_HORIZON:
+#                     actions_valid = actions_valid[-ACTIVE_HORIZON:]
+                
+#                 # Temporal Ensembling Weighting
+#                 k = 0.01 
+#                 # Reverse indices so the newest prediction (last index) gets the highest weight
+#                 # np.arange(len)[::-1] -> [N-1, N-2, ..., 0]
+#                 indices = np.arange(len(actions_valid))[::-1]
+#                 exp_weights = np.exp(-k * indices)
+#                 exp_weights = exp_weights / exp_weights.sum()
+#                 exp_weights = torch.from_numpy(exp_weights.astype(np.float32)).to(device).unsqueeze(dim=1)
+                
+#                 # Weighted average of valid actions
+#                 raw_action = (actions_valid * exp_weights).sum(dim=0).cpu().numpy()
+#             else:
+#                 # Standard Open Loop Execution
+#                 raw_action = all_actions[:, t % query_freq].squeeze(0).cpu().numpy()
+                
+#             # --- 6. Execution ---
+#             action = post_process(raw_action)
+#             success = env.execute_action(action, mode=args.mode)
+            
+#             if not success:
+#                 print("Halting.")
+#                 break
+
+#             t += 1
+#             if args.mode == 'auto':
+#                 elapsed = time.time() - loop_start
+#                 time.sleep(max(0, SERVO_DT - elapsed))
+#     except KeyboardInterrupt:
+#         print("Stopping...")
+#         if env.rtde_c: env.rtde_c.stopScript()
+#     finally:
+#         # Stop all sensors
+#         for name, sensor in active_sensors.items():
+#             print(f"Stopping {name}...")
+#             sensor.stop()
+            
+#         p.disconnect()
+#         cv2.destroyAllWindows() 
+#         if env.gripper: env.gripper.close_connection()
 def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
@@ -593,7 +904,6 @@ def main(args):
         with open(stats_path, 'rb') as f:
             stats = pickle.load(f)
         
-        # Updated to match your flat dictionary structure
         QPOS_MEAN = stats['qpos_mean']
         QPOS_STD  = stats['qpos_std']
         ACTION_MEAN = stats['action_mean']
@@ -601,25 +911,22 @@ def main(args):
         
         print(f"✅ Successfully loaded stats from: {stats_path}")
         print(f"   Shape: Qpos Mean {QPOS_MEAN.shape} | Action Mean {ACTION_MEAN.shape}")
+        print(f"   Shape: Qpos Mean {QPOS_MEAN} | Action Mean {ACTION_MEAN}")
     except Exception as e:
         print(f"❌ Failed to load dataset_stats.pkl: {e}")
         sys.exit(1)
 
     def pre_process(s_qpos):
-        # Standard normalization: (x - mean) / std
         return (s_qpos - QPOS_MEAN) / QPOS_STD
 
     def post_process(a):
-        # De-normalization: (x * std) + mean
         return a * ACTION_STD + ACTION_MEAN
 
     policy = make_policy(POLICY_CONFIG['policy_class'], POLICY_CONFIG)
     
-    # Load checkpoint with weights_only=False to handle numpy scalars (epoch/loss) without error
     print(f"Loading checkpoint: {args.checkpoint}")
     payload = torch.load(args.checkpoint, map_location=device, weights_only=False)
     
-    # Handle both "Full State" (dict with 'model_state_dict') and "Weights Only" checkpoints
     if isinstance(payload, dict) and 'model_state_dict' in payload:
         print(f"   [Checkpoint] Loading 'model_state_dict' from full checkpoint (Epoch: {payload.get('epoch', 'N/A')})")
         state_dict = payload['model_state_dict']
@@ -631,11 +938,10 @@ def main(args):
     policy.to(device)
     policy.eval()
     
-    # Debug: Check camera names order
     required_cams = POLICY_CONFIG['camera_names']
     print(f"\n[Config] Model Trained With Cameras: {required_cams}")
     
-    # 1. PHASE 1: Initialize Cameras (Robot Disconnected)
+    # 1. PHASE 1: Initialize Cameras
     print("\n" + "="*60)
     print("PHASE 1: SENSOR INITIALIZATION")
     print("⚠️  Ensure Robot Ethernet is DISCONNECTED to avoid Aria conflicts.")
@@ -644,9 +950,6 @@ def main(args):
     active_sensors = {}
     
     try:
-        # Initialize only the cameras required by the config
-        # 'aria' uses SharedMemory. 'cam1' and 'cam2' use RealSense via USB.
-        
         if 'aria' in required_cams:
             print("[Sensor] Starting Aria (Shared Memory)...")
             active_sensors['aria'] = ThreadedSensor(SharedMemoryReceiver, shm_name="aria_stream_v1")
@@ -666,12 +969,11 @@ def main(args):
         print(f"❌ Camera Init Failed: {e}")
         return
 
-    # Wait for streams
     print("Waiting for video streams...")
     while True:
         all_ready = True
         for name, sensor in active_sensors.items():
-            _, t_stamp = sensor.get_latest()
+            _, t_stamp,_ = sensor.get_latest()
             if t_stamp == 0:
                 all_ready = False
                 break
@@ -693,19 +995,15 @@ def main(args):
     print("\n[System] Connecting to Robot & Gripper...")
     env = RobotSystem(args.robot_ip, args.gripper_port)
     
-    # --- GO HOME ---
     env.go_home()
-    # ---------------
 
     print(f"\n✅ SYSTEM READY. Mode: {args.mode.upper()}")
     
-    # --- LOGIC: EXECUTE FIRST N ACTIONS ---
     num_queries = POLICY_CONFIG['num_queries']
     
     if args.action_chunking:
         query_freq = 1
     else:
-        # If execution steps is specified, use it. Otherwise execute all queries.
         if args.steps_per_inference:
             query_freq = min(args.steps_per_inference, num_queries)
         else:
@@ -714,14 +1012,14 @@ def main(args):
     print(f"[Strategy] Chunking: {args.action_chunking}, Frequency: {query_freq}")
     
     all_time_actions = torch.full(
-        [args.max_timesteps, args.max_timesteps + num_queries,TASK_CONFIG['state_dim']],
+        [args.max_timesteps, args.max_timesteps + num_queries, TASK_CONFIG['state_dim']],
         float('nan')
     ).to(device)
     
-    # Initialize all_actions with None to track first run
     all_actions = None
-    
+    attn_weights = None # Initialize attention weights variable
     t = 0
+    
     try:
         while t < args.max_timesteps:
             loop_start = time.time()
@@ -731,50 +1029,86 @@ def main(args):
             qpos_norm = pre_process(qpos_raw)
             qpos_tensor = torch.from_numpy(qpos_norm).float().to(device).unsqueeze(0)
             
-            # Collect images dynamically based on config
             latest_images = {}
-            for cam_name, sensor in active_sensors.items():
-                img_raw, ts = sensor.get_latest()
-                latest_images[cam_name] = img_raw
-                
-                # Check latency
-                if (time.time() - ts > 0.5):
-                    print(f"⚠️ Warning: Lag detected in {cam_name}")
+            latest_fps = {} 
 
-            # --- 2. Visualization & Processing ---
-            # We map camera names to tensors in the order specified by configuration
+            for cam_name, sensor in active_sensors.items():
+                img_raw, ts, fps = sensor.get_latest()
+                latest_images[cam_name] = img_raw
+                latest_fps[cam_name] = fps
+                
+                if (time.time() - ts > 0.5) and ts > 0:
+                     print(f"⚠️ LAG WARNING: {cam_name} is {time.time() - ts:.2f}s behind!")
+
+            # --- 2. Processing (To Tensors) ---
             tensors_to_stack = []
-            
             for cam_name in required_cams:
                 if cam_name not in latest_images or latest_images[cam_name] is None:
                     print(f"CRITICAL: Missing frame for {cam_name}")
                     continue
 
                 img_vis = latest_images[cam_name]
-                
-                # Visualize
-                if args.visualize:
-                    bgr = cv2.cvtColor(img_vis, cv2.COLOR_RGB2BGR)
-                    cv2.imshow(f"Input: {cam_name}", bgr)
-
-                # Preprocess: Match train_joint_1.py / utils_joint_1.py exactly
-                # 1. To Tensor: [H, W, C] -> [C, H, W]
-                # 2. Scale: / 255.0 
-                # 3. Normalize: ImageNet Stats (UPDATED)
                 img_t = torch.from_numpy(img_vis).permute(2, 0, 1).float() / 255.0
-                img_t = normalize(img_t) # Apply ImageNet Normalization
-                
+                # img_t = normalize(img_t)
                 tensors_to_stack.append(img_t.to(device))
             
-            if args.visualize:
+            # Stack [Num_Cams, C, H, W] -> [1, Num_Cams, C, H, W]
+            img_all = torch.stack(tensors_to_stack, dim=0).unsqueeze(0)
+
+            # --- 3. Inference ---
+            if args.action_chunking or (t % query_freq == 0):
+                with torch.inference_mode():
+                    # Get actions AND attention weights
+                    all_actions, attn_weights = policy(qpos_tensor, img_all)
+
+            # --- 4. VISUALIZATION (Overlaid Attention Map) ---
+            if args.visualize and attn_weights is not None:
+                # Extract attention for the current prediction query (index 0)
+                # Ignore the first 2 tokens (latent, proprio)
+                attn = attn_weights[0, 0, 2:].detach().cpu().numpy()
+                
+                # ResNet34 with 480x640 input -> 32x downsampling = 15x20
+                # h, w = 30, 40
+                h,w = 15,20
+                num_cams = len(required_cams)
+                
+                # 【修复核心】：先还原为左右拼接的完整 2D 特征图 (15, 20 * num_cams)
+                attn_2d_full = attn.reshape(h, w * num_cams)
+                
+                for cam_id, cam_name in enumerate(required_cams):
+                    if cam_name in latest_images:
+                        # Convert to BGR for OpenCV display
+                        img_bgr = cv2.cvtColor(latest_images[cam_name], cv2.COLOR_RGB2BGR)
+                        
+                        # Add FPS text
+                        fps_val = latest_fps.get(cam_name, 0.0)
+                        color = (0, 255, 0) if fps_val > 20 else (0, 0, 255)
+                        cv2.putText(img_bgr, f"FPS: {fps_val:.1f}", (10, 30), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2, cv2.LINE_AA)
+                        
+                        # 【修复核心】：在宽度维度上切片，提取当前相机的特征
+                        start_w = cam_id * w
+                        end_w = (cam_id + 1) * w
+                        cam_attn = attn_2d_full[:, start_w:end_w]
+                        
+                        # Normalize to 0-1 for heatmap rendering
+                        cam_attn = (cam_attn - cam_attn.min()) / (cam_attn.max() - cam_attn.min() + 1e-8)
+                        
+                        # Resize to match camera dimensions (640x480)
+                        cam_attn_resized = cv2.resize(cam_attn, (CAM_WIDTH, CAM_HEIGHT))
+                        heatmap = cv2.applyColorMap(np.uint8(255 * cam_attn_resized), cv2.COLORMAP_JET)
+                        
+                        # Blend the original image and heatmap
+                        overlay = cv2.addWeighted(img_bgr, 0.6, heatmap, 0.4, 0)
+                        cv2.imshow(f"Input & Attention: {cam_name}", overlay)
                 cv2.waitKey(1)
 
-            # --- 3. User Verification (Pre-Inference) ---
+            # --- 5. User Verification (Pre-Execution Loop) ---
             if args.mode == 'manual':
                 print("-" * 40)
                 print(f"Current Joints:  {np.round(qpos_raw[:6], 3)}")
                 print(f"Current Gripper: {qpos_raw[6]}")
-                print(">>> Press 'y' in the IMAGE WINDOW to confirm, 'n' to skip.")
+                print(">>> Press 'y' in the IMAGE WINDOW to confirm, 'k' to skip.")
                 print("-" * 40)
 
                 user_approved = False
@@ -783,14 +1117,14 @@ def main(args):
                     if key == ord('y'):
                         user_approved = True
                         break
-                    elif key == ord('k'): # 'k' for skip
+                    elif key == ord('k'): 
                         user_approved = False
                         break
                     
-                    # Check if windows closed
                     if len(required_cams) > 0:
                         first_cam = required_cams[0]
-                        if cv2.getWindowProperty(f"Input: {first_cam}", cv2.WND_PROP_VISIBLE) < 1:
+                        # Verify the window hasn't been closed manually
+                        if cv2.getWindowProperty(f"Input & Attention: {first_cam}", cv2.WND_PROP_VISIBLE) < 1:
                             user_approved = False
                             break
 
@@ -798,45 +1132,27 @@ def main(args):
                     print("Skipping inference step...")
                     continue
 
-            # --- 4. Inference ---
-            # Stack [Num_Cams, C, H, W] -> [1, Num_Cams, C, H, W]
-            img_all = torch.stack(tensors_to_stack, dim=0).unsqueeze(0)
-            # img_all_black = torch.zeros_like(img_all)
-
-            # Logic: If chunking is ON, run every step.
-            # If chunking is OFF, run only when t % query_freq == 0 (start of new N-step block).
-            if args.action_chunking or (t % query_freq == 0):
-                with torch.inference_mode():
-                    all_actions = policy(qpos_tensor, img_all)
-
-            # --- 5. Action Selection ---
+            # --- 6. Action Selection ---
             if args.action_chunking:
-                # Fill temporal buffer with new prediction
                 all_time_actions[[t], t : t + num_queries] = all_actions
                 
-                # Retrieve all overlapping predictions for the current timestep t
                 actions_for_curr_step = all_time_actions[:, t]
                 actions_valid = actions_for_curr_step[~torch.isnan(actions_for_curr_step[:, 0])]
                 
                 if len(actions_valid) > ACTIVE_HORIZON:
                     actions_valid = actions_valid[-ACTIVE_HORIZON:]
                 
-                # Temporal Ensembling Weighting
                 k = 0.01 
-                # Reverse indices so the newest prediction (last index) gets the highest weight
-                # np.arange(len)[::-1] -> [N-1, N-2, ..., 0]
                 indices = np.arange(len(actions_valid))[::-1]
                 exp_weights = np.exp(-k * indices)
                 exp_weights = exp_weights / exp_weights.sum()
                 exp_weights = torch.from_numpy(exp_weights.astype(np.float32)).to(device).unsqueeze(dim=1)
                 
-                # Weighted average of valid actions
                 raw_action = (actions_valid * exp_weights).sum(dim=0).cpu().numpy()
             else:
-                # Standard Open Loop Execution
                 raw_action = all_actions[:, t % query_freq].squeeze(0).cpu().numpy()
                 
-            # --- 6. Execution ---
+            # --- 7. Execution ---
             action = post_process(raw_action)
             success = env.execute_action(action, mode=args.mode)
             
@@ -848,11 +1164,11 @@ def main(args):
             if args.mode == 'auto':
                 elapsed = time.time() - loop_start
                 time.sleep(max(0, SERVO_DT - elapsed))
+
     except KeyboardInterrupt:
         print("Stopping...")
         if env.rtde_c: env.rtde_c.stopScript()
     finally:
-        # Stop all sensors
         for name, sensor in active_sensors.items():
             print(f"Stopping {name}...")
             sensor.stop()
@@ -862,9 +1178,10 @@ def main(args):
         if env.gripper: env.gripper.close_connection()
 
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint', type=str, default='/home/pengtao/ws_ros2humble-main_lab/ACT/checkpoints/joint/20260206_pick_and_place_156/pick/policy_step_92000.ckpt', help='Path to ACT policy.ckpt')
+    parser.add_argument('--checkpoint', type=str, default='/home/pengtao/ws_ros2humble-main_lab/ACT/checkpoints/joint/20260215_pick_and_place_66_realsense/pick/policy_step_66672.ckpt', help='Path to ACT policy.ckpt')
     parser.add_argument('--robot_ip', type=str, default=ROBOT_IP)
     parser.add_argument('--gripper_port', type=str, default=GRIPPER_PORT)
     parser.add_argument('--mode', type=str, default='auto', choices=['manual', 'auto'])

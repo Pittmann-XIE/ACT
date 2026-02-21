@@ -38,8 +38,8 @@ class ACTPolicy(nn.Module):
             loss_dict['loss'] = loss_dict['l1'] + loss_dict['kl'] * self.kl_weight
             return loss_dict
         else: # inference time
-            a_hat, _, (_, _) = self.model(qpos, image, env_state) # no action, sample from prior
-            return a_hat
+            a_hat, _, (_, _),attn_weights = self.model(qpos, image, env_state) # no action, sample from prior
+            return a_hat, attn_weights
 
     def configure_optimizers(self):
         return self.optimizer
